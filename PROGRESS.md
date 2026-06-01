@@ -1,0 +1,188 @@
+# Progress
+
+## Project: Claude Token Tracker (Windows system-tray app)
+
+Tracks **Claude.ai Pro/Max** rolling usage limits via claude.ai's private
+`/api/organizations/{org}/usage` endpoint, authenticated with the user's session cookie.
+
+Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
+
+---
+
+## Status: v1.6 — reset datetime in details + "available again" alerts
+
+### v1.6 — surface the reset time and notify when a limit clears
+- **Goal:** show *when* each window resets (not just a countdown), and ping the user the
+  moment a maxed-out limit becomes usable again.
+- **`Models/UsageModels.cs`** — added `UsageWindow.IsLimited` (`Utilization >= 1.0`) so
+  "reached the limit" is one unambiguous check shared by the notification logic.
+- **`UI/UsageRow.cs`** — the detail rows now show the **absolute reset datetime** alongside the
+  countdown, e.g. `resets in 2h 30m  ·  6:30 PM` (phrased relative to today: bare time →
+  `tomorrow 6:30 PM` → `Wed 6:30 PM` → `Jun 9, 6:30 PM`). New `FormatResetClock` /
+  `FormatResetDetailed` helpers; `FormatReset` (the compact countdown) is unchanged so the tray
+  menu stays terse. Row reflowed to a cleaner 3-line card (name + %, bar, reset line) and grew
+  64→78 px; the absolute time also means the line stays accurate between refreshes.
+- **`App/TrayApplicationContext.cs`** — when any window hits `IsLimited` with a future reset, we
+  record a **reset watch** (`key → (resetsAt, displayName)`). A dedicated 30 s `_resetTimer`
+  (running only while something is pending, so it's idle the rest of the time) plus each poll
+  fire a **"Claude limit reset — tokens are available again"** balloon the moment the reset time
+  passes, then clear the watch and re-arm the threshold warning. Respects the existing
+  `ShowNotifications` toggle. Time-based (not poll-based) so the alert lands on time even with a
+  long poll interval. Watches are in-memory (reset across app restarts), matching `_notifiedKeys`.
+- **Verification:** `dotnet build -c Release` → **0 warnings / 0 errors**.
+
+## Status: v1.5 — one-file release (self-contained single .exe)
+
+### v1.5 — ship it as a single portable .exe
+- **Goal:** a "real release" anyone can run without installing the .NET runtime.
+- **`Properties/PublishProfiles/SingleFile-win-x64.pubxml`** — canonical publish config:
+  `win-x64`, `SelfContained`, `PublishSingleFile`, `IncludeNativeLibrariesForSelfExtract` (native
+  libs folded in → truly one file), `EnableCompressionInSingleFile` (keeps it ~67 MB),
+  `PublishReadyToRun` (faster cold start for a startup app), and `DebugType=embedded` (no loose
+  `.pdb`, so the output folder holds *only* the exe). Trimming deliberately **off** (WinForms +
+  reflection). Works from both the CLI and VS's Publish button.
+- **`publish.ps1`** (repo root) — one-command release: locates `dotnet` even when it's not on
+  `PATH` (it wasn't on this machine — the SDK lives at `C:\Program Files\dotnet`), cleans `release\`,
+  publishes via the profile, and prints the final exe path + size.
+- **`NuGet.config`** — the machine had **no NuGet source configured** at all, so the self-contained
+  restore failed (`NU1100` on the runtime packs). Added a repo-local source (`<clear/>` + nuget.org)
+  used *only* to fetch the runtime packs the single file bundles. The app still has **zero NuGet
+  package deps**, and the lean framework-dependent path still needs no download.
+- **Version** bumped `1.0.0` → **`1.4.0`** (`Version`/`FileVersion`/`AssemblyVersion`) so the exe's
+  metadata matches the actual shipped state.
+- **Output:** `release\ClaudeTokenTracker.exe` — **single file, 66.7 MB**, ProductVersion 1.4.0,
+  runs on Win10 (1803+)/11 x64 with no prerequisites. `dotnet publish` → 0 errors. (Live launch
+  smoke-test skipped: a dev instance was already running, so the single-instance mutex would only
+  pop the "already running" dialog.)
+
+## Status: v1.4 — UI redesign (Anthropic aesthetic), builds clean
+
+### v1.4 — professional visual pass on the windows
+- **New `UI/Theme.cs`** — one place for the whole visual language, using Anthropic's published
+  brand palette: ivory canvas `#FAF9F5` (never pure white), warm charcoal ink `#141413`, the clay
+  accent `#D97757` (hover `#C6613F`), light-gray hairlines `#E8E6DC`. Headings use a serif
+  (Georgia) and body uses Segoe UI to echo their editorial type. A single warm **semantic usage
+  ramp** (olive → ochre → clay → brick) is now shared by the meters *and* the tray icon, so every
+  surface agrees on colour. Also holds the font / rounded-rect / hairline helpers.
+- **New `UI/FlatButton.cs`** — owner-drawn, anti-aliased rounded button with two variants: a filled
+  clay **Primary** and a quiet outlined **Secondary**, each with hover/press states.
+- **`UsageForm`** — ivory canvas, serif "Claude Usage" title + muted subtitle, hairline header/footer
+  bands (rules, not heavy fills), slim textless meters with a bold colour-coded **% on the right**,
+  hairline row dividers (replacing zebra), and a clay Refresh button + clay link.
+  - Fixed a footer-layout bug found via an off-screen render: the right-aligned actions were anchored
+    while the footer panel still had its default (pre-dock) width, shoving them ~220 px off the right
+    edge. They're now positioned from the footer's `Layout` event using its real width, so they sit
+    correctly and track window resizes.
+  - Fixed the header subtitle clipping its trailing **extra-usage** segment: the subtitle was an
+    `AutoSize` label that ran off the right edge, so `… · Extra usage: 12/50 USD` (the last item, and
+    the *only* place credit-based overage is surfaced) was cut off. It now wraps to the window width
+    via `LayoutHeader()` (constrains `MaximumSize`, grows the header band to fit) and re-flows on
+    resize. Verified via off-screen renders at 420 px and 380 px widths.
+- **`SettingsForm`** — matching serif header band, palette-styled inputs (flat single-line borders,
+  white fields), clay **Save** / outlined **Cancel** / outlined **Test connection**, and a clay
+  "How do I get this?" link.
+- **`TrayIconRenderer`** — colour logic now delegates to `Theme.SemanticColor` (gray = `InkMuted`).
+- **Merge note:** this pass landed alongside the v1.3 pin-to-taskbar work. The `SettingsForm`
+  rewrite was reconciled so the **"Always show the icon on the taskbar"** checkbox (bound to
+  `AppSettings.PinToTaskbar`) is preserved and still round-trips through Save.
+- **Verification:** `dotnet build -c Release` → **0 warnings / 0 errors**. Both windows were rendered
+  off-screen to PNG to confirm layout, spacing, and the colour ramp before sign-off. No new NuGet
+  deps; the curl transport and all behaviour are untouched.
+
+## Status: v1.3 — pin-to-taskbar (always-visible tray icon)
+
+### v1.3 — keep the icon glanceable
+- **Problem:** Windows 11 (22H2+) hides tray icons in the "⌃" overflow flyout by default, so the
+  glanceable color/percentage icon wasn't actually visible at a glance.
+- **Fix:** new `Services/TaskbarPinner.cs` promotes our own icon by setting
+  `IsPromoted = 1` on our entry under `HKCU\Control Panel\NotifyIconSettings` (matched by
+  `ExecutablePath`). Effect is immediate — no Explorer restart. The subkey only appears a beat
+  after the icon is first shown and Windows can regenerate it, so we retry briefly on launch
+  (8× / 800 ms) and re-apply every start.
+- **Controls:** `AppSettings.PinToTaskbar` (default **on**); tray-menu toggle "Always show icon on
+  taskbar" and a matching Settings checkbox. Pre-22H2 returns `Unsupported` and we show manual
+  pin instructions (drag out of overflow / Taskbar settings) instead of failing silently.
+- No new dependencies (registry via `Microsoft.Win32`, same as `StartupManager`).
+
+## Status: v1.2 — VERIFIED WORKING against a live Max 5x account
+
+### v1.2 — Cloudflare bypass via curl transport (the fix that made it actually work)
+- **Verified end-to-end with a real sessionKey**: correctly reads plan ("Max 5x"), org,
+  extra-usage credits, and per-window utilization with reset times.
+- **Critical discovery #1 — utilization is a PERCENT (0–100), not a 0–1 fraction** as the
+  third-party write-ups claimed. Live data: `five_hour.utilization = 20.0` means 20%. Fixed the
+  scaling (was showing 2000% / maxed red icon). Plan now derived from org `rate_limit_tier`
+  (e.g. `default_claude_max_5x` → "Max 5x"); dropped the redundant subscription_details call.
+- **Critical discovery #2 — Cloudflare blocks .NET HttpClient.** Every variant (HTTP/1.1, HTTP/2,
+  browser hints, with/without compression) gets `cf-mitigated: challenge` ("Just a moment" HTML).
+  The OS `curl.exe` (same Schannel TLS!) passes — the difference is the TLS/HTTP fingerprint
+  (JA3/JA4) which .NET can't easily change.
+  - **Solution:** `ClaudeUsageClient` now shells out to **`curl.exe`** (built into Windows 10
+    1803+/11) as its HTTP transport. Headers + cookie go through a short-lived curl `--config`
+    file (cookie never on the command line); status parsed via a `--write-out` marker.
+  - Trade-off: depends on curl's fingerprint continuing to pass Cloudflare. No NuGet deps added.
+
+## Status: v1.1 — functional, builds clean; auth/cookie diagnostics hardened
+
+### v1.1 — cookie & auth troubleshooting (after first user test)
+- Probed the live endpoint: **auth is purely the `sessionKey` cookie**; Cloudflare is *not*
+  challenging plain requests (clean JSON `403 account_session_invalid` when unauthenticated).
+  `anthropic-client-platform` is **not** required, but is now sent for browser fidelity.
+- `ClaudeUsageClient` now **surfaces claude.ai's own error message** (e.g.
+  "Invalid authorization (account_session_invalid)") instead of a generic HTTP code — turns the
+  vague "couldn't get usage" into an actionable message.
+- Added browser-mimicking headers (`anthropic-client-platform/version/device-id`), bumped UA.
+- More forgiving cookie parsing: strips wrapping quotes/whitespace from a bare value, and can
+  extract `sessionKey`/`cf_clearance` from a pasted cURL/header blob.
+- Rewrote the in-app cookie help to lead with the **Application → Cookies → sessionKey** method
+  and explain that DevTools "Copy as fetch/cURL" *redacts* the cookie (the `credentials: "omit"`
+  the user saw is normal; the cookie is still sent by the browser).
+
+## Status: v1.0 — functional, builds clean, launches
+
+### Done
+- [x] Decided data source: claude.ai consumer (Pro/Max) usage endpoint + session cookie.
+- [x] Installed .NET 8 SDK (8.0.421) via winget.
+- [x] Project scaffold: `.csproj`, `Program.cs`, per-monitor DPI, single-instance mutex,
+      global exception logging to `%APPDATA%\ClaudeTokenTracker\error.log`.
+- [x] `ClaudeUsageClient` — lists orgs, reads usage (+ best-effort plan label / extra-usage),
+      defensive JSON parsing, friendly HTTP/Cloudflare/auth error messages.
+- [x] `SettingsStore` + `DataProtection` — settings JSON with **DPAPI-encrypted cookie**
+      (P/Invoke, no NuGet).
+- [x] `TrayIconRenderer` — runtime-drawn color-coded % icon (no GDI handle leak).
+- [x] `TrayApplicationContext` — NotifyIcon, context menu w/ per-window readouts,
+      polling timer, threshold balloon notifications, peak summary tooltip.
+- [x] `SettingsForm` — cookie entry, **Test connection**, org picker, poll interval,
+      warn threshold, start-with-Windows + notifications toggles, cookie help.
+- [x] `UsageForm` / `UsageRow` / `UsageBar` — details window with colored bars + reset countdowns.
+- [x] `StartupManager` — per-user Run-key toggle.
+- [x] Build succeeds (0 warnings / 0 errors); smoke-tested startup (no crash, no error log).
+- [x] **Minimal dependencies**: zero NuGet packages, zero NuGet sources required. Verified a clean
+      framework-dependent publish (`dotnet publish -c Release -o publish`) → ~230 KB output
+      (`.exe` + one DLL) using the installed .NET 8 Desktop Runtime.
+- [x] README + .gitignore.
+
+### Verified manually by the user
+- [ ] Paste a real cookie → Test connection succeeds and shows live numbers.
+- [ ] Icon color/percentage updates on the polling interval.
+- [ ] Threshold notification fires.
+- [ ] "Start with Windows" persists across reboot.
+
+### Possible future enhancements
+- [ ] Auto-read the cookie from the local browser (Chrome/Edge DPAPI cookie store) so no manual paste.
+- [ ] History/graph of utilization over time.
+- [ ] Optional `console.anthropic.com` Admin API mode (API cost/usage) as a second source.
+- [ ] Installer (MSI / winget manifest) and a proper app `.ico`.
+- [ ] Resilience: detect schema changes and surface a clear "endpoint changed" hint.
+
+---
+
+## Notes / decisions
+- The usage endpoint is **undocumented**; parsing is intentionally defensive (any object with a
+  numeric `utilization` is treated as a window) so new windows appear automatically.
+- Full Cookie header (incl. `cf_clearance`) is recommended over bare `sessionKey` for Cloudflare.
+- **Dependency policy: keep it minimal.** No NuGet *package* deps (DPAPI via P/Invoke). The
+  **release ship path** is now the self-contained single file (`publish.ps1` → one ~67 MB exe, no
+  runtime install for end users); it pulls only the .NET runtime packs from nuget.org at build time.
+  A lean framework-dependent publish (`dotnet publish -c Release -o publish`, ~230 KB) is still
+  available for machines that already have the .NET 8 Desktop Runtime and downloads nothing.

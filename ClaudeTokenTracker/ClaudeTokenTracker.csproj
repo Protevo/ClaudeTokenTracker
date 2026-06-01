@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ClaudeTokenTracker</RootNamespace>
+    <AssemblyName>ClaudeTokenTracker</AssemblyName>
+    <Version>1.4.0</Version>
+    <FileVersion>1.4.0.0</FileVersion>
+    <AssemblyVersion>1.4.0.0</AssemblyVersion>
+    <Authors>TokenTracker</Authors>
+    <Product>Claude Token Tracker</Product>
+    <Description>System tray app that tracks Claude.ai (Pro/Max) usage limits.</Description>
+
+    <!-- Per-monitor DPI so the dynamically rendered tray icon stays crisp. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationUseCompatibleTextRendering>false</ApplicationUseCompatibleTextRendering>
+
+    <!-- Trim language satellites to keep publish output small. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- No NuGet packages: DPAPI is called directly via P/Invoke (Services/DataProtection.cs). -->
+
+</Project>
