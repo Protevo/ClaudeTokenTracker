@@ -3,24 +3,30 @@ using ClaudeTokenTracker.Models;
 
 namespace ClaudeTokenTracker.UI;
 
-/// <summary>One window's row in <see cref="UsageForm"/>: name + reset on top,
-/// a slim meter with a bold, colour-coded percentage beneath.</summary>
+/// <summary>One window's row in <see cref="UsageForm"/>: a progress ring on the left,
+/// window name and reset time on the right.</summary>
 internal sealed class UsageRow : Panel
 {
     private const int PadX = 18;
+    private const int RingSize = 42;
+    private const int TextGap = 14;
 
     private readonly Label _name;
     private readonly Label _reset;
-    private readonly Label _percent;
-    private readonly UsageBar _bar;
+    private readonly UsageRing _ring;
 
     public UsageRow(UsageWindow window)
     {
-        Height = 78;
+        Height = 58;
         Margin = new Padding(0);
         BackColor = Theme.Canvas;
         DoubleBuffered = true;
         SetStyle(ControlStyles.ResizeRedraw, true);
+
+        _ring = new UsageRing
+        {
+            Value = window.Utilization,
+        };
 
         _name = new Label
         {
@@ -29,7 +35,6 @@ internal sealed class UsageRow : Panel
             Font = Theme.Sans(10f),
             ForeColor = Theme.Ink,
             BackColor = Color.Transparent,
-            Location = new Point(PadX, 12),
         };
 
         _reset = new Label
@@ -39,29 +44,11 @@ internal sealed class UsageRow : Panel
             Font = Theme.Sans(8.25f),
             ForeColor = Theme.InkMuted,
             BackColor = Color.Transparent,
-            Location = new Point(PadX, 58),
         };
 
-        _percent = new Label
-        {
-            Text = window.Percent + "%",
-            AutoSize = true,
-            Font = Theme.Sans(11f, FontStyle.Bold),
-            ForeColor = Theme.SemanticColor(window.Percent),
-            BackColor = Color.Transparent,
-        };
-
-        _bar = new UsageBar
-        {
-            Value = window.Utilization,
-            Location = new Point(PadX, 34),
-            Height = 8,
-        };
-
+        Controls.Add(_ring);
         Controls.Add(_name);
         Controls.Add(_reset);
-        Controls.Add(_percent);
-        Controls.Add(_bar);
 
         Resize += (_, _) => LayoutChildren();
         LayoutChildren();
@@ -69,13 +56,16 @@ internal sealed class UsageRow : Panel
 
     private void LayoutChildren()
     {
-        int barCenterY = 38;
-        _percent.Location = new Point(Width - PadX - _percent.Width, barCenterY - _percent.Height / 2);
+        int textLeft = PadX + RingSize + TextGap;
+        int rowCenterY = Height / 2;
 
-        _bar.Location = new Point(PadX, barCenterY - _bar.Height / 2);
-        _bar.Width = Math.Max(40, _percent.Left - 12 - PadX);
+        _ring.SetBounds(PadX, rowCenterY - RingSize / 2, RingSize, RingSize);
 
-        _reset.Location = new Point(PadX, 58);
+        _reset.Location = new Point(Width - PadX - _reset.Width, rowCenterY - _reset.Height / 2);
+
+        int nameMax = Math.Max(80, _reset.Left - textLeft - 12);
+        _name.MaximumSize = new Size(nameMax, 0);
+        _name.Location = new Point(textLeft, rowCenterY - _name.Height / 2);
     }
 
     protected override void OnPaint(PaintEventArgs e)

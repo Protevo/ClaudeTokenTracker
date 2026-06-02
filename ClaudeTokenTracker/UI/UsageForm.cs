@@ -64,7 +64,7 @@ public sealed class UsageForm : Form
         _subtitle = new Label
         {
             Text = "—",
-            AutoSize = true,
+            AutoSize = false,
             Font = Theme.Sans(9f),
             ForeColor = Theme.InkMuted,
             BackColor = Color.Transparent,
@@ -137,10 +137,10 @@ public sealed class UsageForm : Form
     }
 
     /// <summary>
-    /// Sizes the subtitle to the window width so a long "plan · org · extra usage"
-    /// line wraps onto a second line instead of running off the right edge — which
-    /// previously clipped the trailing extra-usage segment. The header band grows to
-    /// fit the wrapped text so nothing is hidden behind the list.
+    /// Sizes the subtitle to the window width. Plan/org stay on the first line;
+    /// extra usage is on its own line (see <see cref="BuildSubtitle"/>). Long
+    /// segments wrap within the available width so values like "12/50 USD" never
+    /// run off the right edge when they update. The header band grows to fit.
     /// </summary>
     private void LayoutHeader()
     {
@@ -148,12 +148,20 @@ public sealed class UsageForm : Form
             return;
 
         int avail = Math.Max(80, ClientSize.Width - (PadX + 1) - PadX);
-        _subtitle.MaximumSize = new Size(avail, 0);
+        _subtitle.Width = avail;
+
+        const TextFormatFlags wrap =
+            TextFormatFlags.WordBreak | TextFormatFlags.Left | TextFormatFlags.NoPrefix;
+        int subtitleHeight = TextRenderer.MeasureText(
+            _subtitle.Text,
+            _subtitle.Font,
+            new Size(avail, int.MaxValue),
+            wrap).Height;
+        _subtitle.Height = Math.Max(_subtitle.Font.Height, subtitleHeight);
 
         // Bottom padding chosen so a single-line subtitle keeps the original 74px
-        // header; the band only grows once the text wraps to a second line.
-        int subtitleHeight = _subtitle.GetPreferredSize(new Size(avail, 0)).Height;
-        _header.Height = Math.Max(74, _subtitle.Top + subtitleHeight + 11);
+        // header; the band only grows once the text wraps or extra usage adds a line.
+        _header.Height = Math.Max(74, _subtitle.Top + _subtitle.Height + 11);
     }
 
     protected override void OnResize(EventArgs e)
@@ -241,11 +249,17 @@ public sealed class UsageForm : Form
 
     private static string BuildSubtitle(UsageSnapshot s)
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(s.PlanLabel)) parts.Add(s.PlanLabel!);
-        if (!string.IsNullOrWhiteSpace(s.OrgName)) parts.Add(s.OrgName!);
-        if (!string.IsNullOrWhiteSpace(s.ExtraUsageLabel)) parts.Add(s.ExtraUsageLabel!);
-        return parts.Count == 0 ? "Connected" : string.Join("   ·   ", parts);
+        var line1 = new List<string>();
+        if (!string.IsNullOrWhiteSpace(s.PlanLabel)) line1.Add(s.PlanLabel!);
+        if (!string.IsNullOrWhiteSpace(s.OrgName)) line1.Add(s.OrgName!);
+
+        var lines = new List<string>();
+        if (line1.Count > 0)
+            lines.Add(string.Join("   ·   ", line1));
+        if (!string.IsNullOrWhiteSpace(s.ExtraUsageLabel))
+            lines.Add(s.ExtraUsageLabel!);
+
+        return lines.Count == 0 ? "Connected" : string.Join(Environment.NewLine, lines);
     }
 
     public static void OpenUrl(string url)

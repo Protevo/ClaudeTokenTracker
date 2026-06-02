@@ -9,6 +9,20 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 
 ---
 
+## Status: v1.7 — ring gauge replaces clipped pill bar
+
+### v1.7 — clearer usage visualization in the details window
+- **Problem:** the slim pill progress bar's rounded end caps read as two disconnected
+  half-circles flanking the percentage — looked broken and cluttered.
+- **Fix:** new **`UI/UsageRing.cs`** — a compact circular progress ring (track + coloured
+  arc, percentage centred inside). Each **`UsageRow`** now shows the ring on the left with
+  the window name and reset time on a single horizontal line to the right (58 px tall,
+  down from 78). **`UsageBar`** kept for now but no longer used in rows.
+- **Verification:** `dotnet build -c Release` → **0 warnings / 0 errors**.
+- **`UsageForm` subtitle** — extra usage now always on its own line below plan/org; the subtitle
+  label is width-constrained with `TextRenderer` word-wrap (no `AutoSize`) so longer values like
+  `Extra usage: 12/50 USD` never clip off the right when they update on refresh.
+
 ## Status: v1.6 — reset datetime in details + "available again" alerts
 
 ### v1.6 — surface the reset time and notify when a limit clears
