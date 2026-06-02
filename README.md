@@ -1,204 +1,200 @@
 # Claude Token Tracker
 
-A lightweight **Windows system-tray app** that tracks your **Claude.ai (Pro / Max) usage limits**.
-It sits quietly in the notification area and shows, at a glance, how close you are to hitting
-your rolling usage caps — the same numbers you'd see on
-[claude.ai/settings/usage](https://claude.ai/settings/usage).
+A small Windows app that lives in your notification area (system tray) and shows how close you are to your **Claude.ai Pro or Max** usage limits — the same rolling caps you see on [claude.ai/settings/usage](https://claude.ai/settings/usage).
 
-The tray icon shows your **peak utilization** as a colored number:
-
-| Color | Meaning |
-|-------|---------|
-| 🟢 Green | under 50% |
-| 🟡 Amber | 50–79% |
-| 🟠 Orange | 80–94% |
-| 🔴 Red | 95%+ (about to be rate-limited) |
-| ⚪ Gray `?` | not connected / error |
-
-Right-click the icon for a per-window breakdown, or double-click to open the details window
-with live progress bars and reset countdowns.
+You get a color-coded **percentage on the tray icon**, a quick breakdown in the right-click menu, and a details window with progress rings and reset times. No need to keep the usage page open in your browser.
 
 ---
 
-## How it works (and an important caveat)
+## What you need
 
-Claude.ai **does not have an official public usage API**. The Settings → Usage page in the web
-app reads from a private, undocumented endpoint:
+| Requirement | Details |
+|-------------|---------|
+| **Windows** | Windows 10 (version 1803 or newer) or Windows 11, **64-bit** |
+| **Claude plan** | Active **Pro** or **Max** on claude.ai (Free accounts have nothing to meter) |
+| **Browser session** | A valid claude.ai login — you will copy your session cookie once during setup |
 
-```
-GET https://claude.ai/api/organizations/{org_uuid}/usage
-```
-
-This app calls that same endpoint using **your own claude.ai session cookie**. It returns a
-utilization fraction (0–100%) and a reset time for several rolling windows — for example
-`five_hour`, `seven_day`, `seven_day_sonnet`, `seven_day_opus`. You get **rate-limited when any
-one** of these hits 100%, so the app surfaces the peak across all of them.
-
-> ⚠️ Because the endpoint is unofficial, Anthropic could change or remove it at any time. If usage
-> stops loading after a Claude update, that's the likely cause. The app fails gracefully (gray `?`
-> icon) rather than crashing.
-
-### Why it uses `curl.exe`
-
-claude.ai sits behind **Cloudflare bot management**, which fingerprints .NET's TLS/HTTP stack and
-answers every request from `HttpClient` with a "Just a moment…" challenge (`cf-mitigated: challenge`).
-The `curl.exe` that ships with Windows passes that same check, so the app shells out to it as its
-HTTP transport (the cookie is passed via a short-lived curl config file, never on the command line).
-This needs no extra dependencies — `curl.exe` is built into Windows 10 (1803+) and Windows 11.
-
-Note: usage `utilization` from the API is a **percentage (0–100)**, e.g. `20.0` = 20% — verified
-against a live account. The plan name (e.g. "Max 5x") is derived from the org's rate-limit tier.
-
-This is **not** the API billing/cost data from `console.anthropic.com` — that's a separate product
-with its own [Admin API](https://platform.claude.com/docs/en/manage-claude/rate-limits-api). This
-app is specifically for **consumer Pro/Max plan** limits.
+The recommended download is a **single `.exe` file** (~67 MB). It includes everything required to run; you do **not** need to install .NET separately.
 
 ---
 
-## Requirements
+## Install
 
-- Windows 10 (1803+) / 11 (x64) — includes the built-in `curl.exe` the app uses for requests.
-- **.NET runtime:** *nothing to install* if you run the self-contained `release\ClaudeTokenTracker.exe`
-  (it bundles the runtime). The lean framework-dependent build instead needs the
-  [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0); *building* from source
-  needs the .NET 8 SDK.
-- An active **Claude.ai Pro or Max** subscription (Free accounts have no quota to meter).
+1. Open **[Releases](https://github.com/Protevo/ClaudeTokenTracker/releases)** on GitHub and download the latest **`ClaudeTokenTracker.exe`** (or build it yourself — see [For developers](#for-developers) below).
+2. Save the file anywhere you like (for example `Downloads` or `C:\Tools\ClaudeTokenTracker\`).
+3. **Double-click** `ClaudeTokenTracker.exe` to start it.
 
-> **Minimal by design:** the project uses **zero NuGet packages** — only the .NET 8 Windows
-> Desktop SDK. DPAPI encryption is done via direct P/Invoke, so no package restore (and no NuGet
-> source) is needed to build.
+On first run, **Settings** opens automatically because the app is not connected yet. Only one copy can run at a time; starting it again just brings the existing instance forward.
 
----
-
-## Build & run
-
-From the repo root:
-
-```bash
-cd ClaudeTokenTracker
-dotnet build -c Release
-dotnet run -c Release
-```
-
-### Produce a distributable .exe
-
-**Recommended for sharing — one self-contained file, no .NET install needed.** From the repo
-root, run the release script:
-
-```powershell
-.\publish.ps1
-```
-
-It produces a single **`release\ClaudeTokenTracker.exe`** (~67 MB) that bundles the .NET 8 runtime,
-so it runs on any **Windows 10 (1803+) / 11 x64** PC with nothing pre-installed — just hand someone
-that one file and they double-click it. (The script locates the .NET SDK automatically even if
-`dotnet` isn't on your `PATH`.)
-
-Equivalent manual command:
-
-```powershell
-dotnet publish ClaudeTokenTracker\ClaudeTokenTracker.csproj -p:PublishProfile=SingleFile-win-x64 -o release
-```
-
-In Visual Studio you can instead right-click the project → **Publish** → **SingleFile-win-x64**. All
-the packaging settings live in `ClaudeTokenTracker/Properties/PublishProfiles/SingleFile-win-x64.pubxml`.
-
-> The single-file build **downloads the .NET 8 runtime packs from NuGet** the first time (the repo's
-> `NuGet.config` points at nuget.org for exactly this). The app still ships **zero NuGet *package*
-> dependencies** — only the runtime itself is bundled. Trimming is intentionally left off because
-> WinForms relies on reflection.
-
-<details>
-<summary>Alternative: lean framework-dependent build (~230 KB, but needs the .NET 8 Desktop Runtime)</summary>
-
-If the target PC already has the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0),
-this is the smallest option and downloads nothing extra:
-
-```bash
-cd ClaudeTokenTracker
-dotnet publish -c Release -o publish
-```
-
-Output lands in `ClaudeTokenTracker/publish/` (`ClaudeTokenTracker.exe` + a small DLL). Copy that
-folder anywhere on a PC that has the runtime and double-click the `.exe`.
-
-</details>
+Windows may show SmartScreen for an unsigned app. If you trust the source, choose **More info → Run anyway**.
 
 ---
 
 ## First-time setup
 
-On first launch the app opens **Settings** automatically (there's no cookie yet).
+You need to give the app the same session your browser uses on claude.ai. The cookie is stored **encrypted on your PC** and is only sent to `https://claude.ai`.
 
-1. Open [claude.ai/settings/usage](https://claude.ai/settings/usage) in your browser, logged in.
-2. Press **F12** → **Network** tab → reload the page (**F5**).
-3. Click the request named **`usage`**, find the **`Cookie:`** request header, and copy its value.
-   - *Or:* in **Application → Cookies → https://claude.ai**, copy just the **`sessionKey`** value.
-4. Paste it into the **session cookie** box in Settings.
-5. Click **Test connection** — it should report your org, plan, and peak usage.
-6. Adjust the refresh interval / warning threshold if you like, then **Save**.
+### Step 1 — Get your session cookie
 
-> 💡 Pasting the *full* Cookie header (which includes `cf_clearance`) is the most reliable, because
-> it satisfies Cloudflare. Just the `sessionKey` usually works too.
+**Cookies tab**
 
-The session cookie typically lasts a while but **will eventually expire**. When it does, the icon
-turns gray and the menu shows a "session rejected" message — just repeat the steps above to refresh it.
+1. In Chrome or Edge, open [claude.ai/settings/usage](https://claude.ai/settings/usage) while logged in.
+2. Press **F12** to open Developer Tools.
+3. Go to **Application** (Chrome) or **Storage** (Edge) → **Cookies** → `https://claude.ai`.
+4. Find **`sessionKey`**, copy its **Value**, and paste that into the app’s **Session cookie** box.
 
----
+5. Paste that into the **Session cookie** box in the app.
 
-## Features
+Pasting the **full** cookie header (including `cf_clearance` if present) is the most reliable option. A bare `sessionKey` often works too.
 
-- **Tray icon** with live, color-coded peak-utilization percentage.
-- **Right-click menu**: per-window readouts (5-hour, 7-day, per-model…), refresh, open usage page.
-- **Details window**: progress bars + "resets in …" countdowns for every window.
-- **Desktop notifications** when any window crosses your warning threshold (default 80%).
-- **Auto-refresh** on a configurable interval (default 60s; minimum 15s).
-- **Start with Windows** toggle (per-user, no admin needed).
-- **Pin to taskbar** — keeps the icon always visible instead of hidden in the Windows 11 "⌃"
-  overflow flyout, so you can check usage with a glance (on by default; toggle in the menu/Settings).
-- **Single instance** — won't stack multiple icons.
+### Step 2 — Test and save
+
+1. In the app’s **Settings** window, paste the cookie into **Session cookie**.
+2. Click **Test connection**. You should see your organization, plan (for example “Max 5x”), and current usage.
+3. If you belong to more than one organization, pick the correct one from the dropdown.
+4. Optionally change **Refresh interval**, **Warn at %**, or the checkboxes (see [Settings](#settings) below).
+5. Click **Save**.
+
+The tray icon should change from a gray **?** to a colored number within about a minute (or immediately if you use **Refresh now** from the menu).
 
 ---
 
-## Privacy & security
+## Reading the tray icon
 
-- Your cookie is stored **encrypted at rest** using **Windows DPAPI** (current-user scope) in
-  `%APPDATA%\ClaudeTokenTracker\settings.json`. It can only be decrypted by *you* on *this* PC.
-- The cookie is sent **only** to `https://claude.ai`. There is no telemetry and no other network
-  access.
-- To wipe everything, delete the `%APPDATA%\ClaudeTokenTracker` folder and turn off
-  "Start with Windows".
+The icon shows your **peak utilization** across all rolling windows (5-hour, 7-day, per-model limits, and so on). Claude rate-limits you when **any** window hits 100%, so the app displays the highest one.
+
+| Color | Meaning |
+|-------|---------|
+| Green | Under 50% |
+| Amber | 50–79% |
+| Orange | 80–94% |
+| Red | 95% or higher — close to the limit |
+| Gray **?** | Not connected, expired cookie, or an error |
+
+Hover the icon for a short summary. **Right-click** for a per-window list; **double-click** to open the full details window.
 
 ---
 
-## Project layout
+## Everyday use
 
-```
-ClaudeTokenTracker/
-├─ Program.cs                       # entry point, single-instance guard
-├─ App/
-│  ├─ TrayApplicationContext.cs     # tray icon, menu, polling loop, notifications
-│  └─ ErrorReporter.cs              # last-resort exception logging
-├─ Services/
-│  ├─ ClaudeUsageClient.cs          # calls claude.ai's private usage endpoints
-│  ├─ SettingsStore.cs              # load/save settings (DPAPI-encrypted cookie)
-│  ├─ DataProtection.cs             # DPAPI via P/Invoke (no NuGet dependency)
-│  ├─ StartupManager.cs             # "start with Windows" registry toggle
-│  ├─ TaskbarPinner.cs              # keeps the tray icon always visible (Win11 IsPromoted)
-│  └─ TrayIconRenderer.cs           # draws the % icon at runtime
-├─ UI/
-│  ├─ SettingsForm.cs               # cookie entry + test connection
-│  ├─ UsageForm.cs                  # details window
-│  ├─ UsageRow.cs / UsageBar.cs     # row + colored progress-bar controls
-└─ Models/                          # AppSettings, UsageWindow, UsageSnapshot, …
-```
+### Right-click menu
 
-No external NuGet packages — just the .NET 8 Windows Desktop SDK.
+| Item | What it does |
+|------|----------------|
+| *(top lines)* | Live readout for each usage window (name, %, time until reset) |
+| **Show details…** | Opens the usage window with progress rings and reset times |
+| **Refresh now** | Fetches the latest numbers immediately |
+| **Open claude.ai usage page** | Opens the official usage page in your browser |
+| **Settings…** | Cookie, organization, refresh interval, alerts |
+| **Start with Windows** | Launch the app when you sign in (no admin rights needed) |
+| **Always show icon on taskbar** | Keeps the icon visible on Windows 11 instead of hiding it under **⌃** (on by default) |
+| **Exit** | Quits the app completely |
+
+### Details window
+
+Double-click the tray icon (or choose **Show details…**) to see:
+
+- Your **plan**, **organization**, and **extra usage** credits (if your account has them)
+- One **ring gauge** per usage window, with the percentage inside
+- **When each window resets** (countdown plus clock time, for example `resets in 2h 30m · 6:30 PM`)
+- **Refresh** and a link to the claude.ai usage page
+
+Closing the details window only **hides** it; the app keeps running in the tray.
+
+---
+
+## Settings
+
+Open **Settings…** from the tray menu.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| **Session cookie** | *(empty)* | Your claude.ai login — required |
+| **Organization** | First org found | Which org’s usage to show if you have several |
+| **Refresh interval** | 60 seconds | How often to poll (minimum 15 seconds) |
+| **Warn at %** | 80% | Desktop notification when any window crosses this level |
+| **Start with Windows** | Off | Run at sign-in |
+| **Show desktop notifications** | On | Threshold warnings and “limit reset” alerts |
+| **Always show icon on taskbar** | On | Pin the tray icon so it stays visible on Windows 11 |
+
+Use **Test connection** before **Save** whenever you paste a new cookie.
+
+---
+
+## Notifications
+
+With notifications enabled (default):
+
+- You get a **warning** when any usage window crosses your **Warn at %** threshold (default 80%).
+- When a window was **maxed out** and its reset time passes, you get a **“tokens available again”** alert even if the next scheduled refresh is still a while away.
+
+Turn these off in Settings if you only want the tray icon.
+
+---
+
+## Troubleshooting
+
+### Gray **?** icon or “Not connected”
+
+- Your **session cookie expired** — repeat [First-time setup](#first-time-setup) and click **Save**.
+- **Test connection** failed — read the error text; “account_session_invalid” means you need a fresh cookie.
+- You are on the **Free** plan — this app only tracks Pro/Max quotas.
+- **No internet** or claude.ai is down — try **Refresh now** or open the usage page in your browser.
+
+### Numbers look wrong or stopped updating
+
+- Click **Refresh now** or open **Show details…** and press **Refresh**.
+- Anthropic may have changed their private usage API (this app is unofficial). Check [Releases](https://github.com/Protevo/ClaudeTokenTracker/releases) for an updated build.
+
+### Icon hidden on Windows 11
+
+- Enable **Always show icon on taskbar** in the tray menu or Settings.
+- Or click **⌃** in the taskbar corner and drag the icon out to the visible area.
+
+### “Already running” when you start the exe
+
+- The app is already in the tray. Look for the colored number (or **?**) near the clock, or end it from Task Manager and start again.
+
+### Cookie help inside the app
+
+Settings includes a **“How do I get this?”** link with the same instructions as above.
+
+---
+
+## Privacy
+
+- Your cookie is saved under `%APPDATA%\ClaudeTokenTracker\settings.json`, **encrypted with Windows DPAPI** (only your Windows user on this PC can decrypt it).
+- Data is sent **only** to `https://claude.ai`. There is no telemetry and no other servers.
+- To remove everything: quit the app, delete the folder `%APPDATA%\ClaudeTokenTracker`, and turn off **Start with Windows** if you enabled it.
+
+---
+
+## What this app is not
+
+- It does **not** show API billing or team usage from [console.anthropic.com](https://console.anthropic.com) — only **consumer Pro/Max** limits on claude.ai.
+- It is **not** an official Anthropic product. It reads the same usage data your logged-in browser can already see, via an undocumented endpoint that could change in the future.
 
 ---
 
 ## Disclaimer
 
-This is an unofficial tool, not affiliated with or endorsed by Anthropic. It only reads usage data
-that your own logged-in browser session can already see. Use it in accordance with Anthropic's
-terms of service.
+Unofficial tool, not affiliated with or endorsed by Anthropic. Use in line with [Anthropic’s terms of service](https://www.anthropic.com/legal/consumer-terms).
+
+---
+
+## For developers
+
+Source code, build steps, and release packaging are documented for contributors:
+
+```powershell
+# Build and run from source
+cd ClaudeTokenTracker
+dotnet build -c Release
+dotnet run -c Release
+
+# Single-file release exe (repo root)
+.\publish.ps1
+# → release\ClaudeTokenTracker.exe
+```
+
+See [PROGRESS.md](PROGRESS.md) for implementation notes and [RELEASE_NOTES.md](RELEASE_NOTES.md) for version history.
