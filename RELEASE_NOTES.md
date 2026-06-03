@@ -7,7 +7,7 @@
 ### Highlights
 
 - **Circular progress rings** in the details window replace the old pill bar. Each usage window shows a compact ring with the percentage inside, plus the window name and reset time beside it — easier to read at a glance and no more awkward split end caps on the old bar.
-- **Extra usage always visible** — plan and organization stay on the first line of the header; credit-based overage (`Extra usage: …`) moves to its own line below. Long values (for example `12/50 USD`) wrap inside the window instead of clipping off the right when they update on refresh.
+- **Extra usage always visible** — plan and organization stay on the first line of the header; credit-based overage (`Extra usage: …`) moves to its own line below. Dollar amounts match claude.ai (API values are cents ÷ 100, e.g. `$17.20 / $50.00`). Long values wrap inside the window instead of clipping off the right when they update on refresh.
 
 ### Details
 
@@ -21,7 +21,7 @@ Unchanged from prior releases:
 
 - Windows 10 (1803+) or Windows 11 (x64)
 - Claude.ai **Pro** or **Max** subscription and a valid session cookie
-- For the portable build: no .NET install — use `release\ClaudeTokenTracker.exe` from `.\publish.ps1`
+- For the portable build: no .NET install — use `release\ClaudeTokenTracker.exe` from `.\publish.ps1` (~63–67 MB). Do **not** copy the ~150 KB exe from `bin\` after `dotnet build`.
 
 ### Upgrade
 

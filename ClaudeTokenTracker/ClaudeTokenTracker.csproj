@@ -21,6 +21,22 @@
 
     <!-- Trim language satellites to keep publish output small. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- "dotnet build -c Release" must NOT emit a ~150 KB framework-dependent .exe that
+         looks runnable but fails without .NET 8 installed. Use "dotnet run" locally;
+         ship only the output of publish.ps1 (~67 MB self-contained single file). -->
+    <UseAppHost Condition="'$(PublishProfile)' == '' and '$(RuntimeIdentifier)' == ''">false</UseAppHost>
+  </PropertyGroup>
+
+  <!-- Mirror SingleFile-win-x64.pubxml so publish.ps1 / VS Publish cannot accidentally
+       produce a framework-dependent artifact if a property is omitted. -->
+  <PropertyGroup Condition="'$(PublishProfile)' == 'SingleFile-win-x64' or ('$(RuntimeIdentifier)' == 'win-x64' and '$(PublishSingleFile)' == 'true')">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <!-- No NuGet packages: DPAPI is called directly via P/Invoke (Services/DataProtection.cs). -->

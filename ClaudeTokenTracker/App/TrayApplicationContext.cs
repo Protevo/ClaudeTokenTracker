@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Text;
 using ClaudeTokenTracker.Models;
 using ClaudeTokenTracker.Services;
 using ClaudeTokenTracker.UI;
@@ -8,7 +7,8 @@ namespace ClaudeTokenTracker.App;
 
 /// <summary>
 /// Owns the tray icon and the whole app lifecycle: polls claude.ai on a timer,
-/// updates the icon/tooltip/menu, fires threshold notifications, and hosts the
+/// updates the tray icon (5-hour session only), tooltip/menu, fires threshold
+/// notifications, and hosts the
 /// Settings and Usage windows.
 /// </summary>
 public sealed class TrayApplicationContext : ApplicationContext
@@ -143,20 +143,18 @@ public sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        if (_lastSnapshot.Windows.Count == 0)
+        UsageWindow? tray = _lastSnapshot.TrayWindow;
+        if (tray is null)
         {
-            _menu.Items.Insert(idx, MakeWindowItem("No usage windows (free plan?)"));
+            _menu.Items.Insert(idx, MakeWindowItem("No 5-hour session data"));
             return;
         }
 
-        foreach (UsageWindow w in _lastSnapshot.Windows)
-        {
-            string reset = UsageRow.FormatReset(w.ResetsAt);
-            string text = reset.Length > 0
-                ? $"{w.DisplayName}:  {w.Percent}%   ({reset})"
-                : $"{w.DisplayName}:  {w.Percent}%";
-            _menu.Items.Insert(idx++, MakeWindowItem(text));
-        }
+        string reset = UsageRow.FormatReset(tray.ResetsAt);
+        string text = reset.Length > 0
+            ? $"{tray.DisplayName}:  {tray.Percent}%   ({reset})"
+            : $"{tray.DisplayName}:  {tray.Percent}%";
+        _menu.Items.Insert(idx, MakeWindowItem(text));
     }
 
     private static ToolStripMenuItem MakeWindowItem(string text) =>
@@ -212,15 +210,15 @@ public sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        UsageWindow? peak = snapshot.Peak;
-        int peakPercent = peak?.Percent ?? 0;
-        SetIcon(peakPercent);
+        UsageWindow? tray = snapshot.TrayWindow;
+        int trayPercent = tray?.Percent ?? 0;
+        SetIcon(trayPercent);
 
-        _headerItem.Text = peak is null
-            ? "Connected — no usage data"
-            : $"Peak {peakPercent}%  ·  {peak.DisplayName}";
+        _headerItem.Text = tray is null
+            ? "Connected — no 5-hour data"
+            : $"5-hour: {trayPercent}%";
 
-        _notifyIcon.Text = BuildTooltip(snapshot);
+        _notifyIcon.Text = BuildTrayTooltip(snapshot);
         CheckThresholds(snapshot);
     }
 
@@ -229,24 +227,24 @@ public sealed class TrayApplicationContext : ApplicationContext
         int threshold = _settings.WarnThresholdPercent;
         var newlyCrossed = new List<string>();
 
-        foreach (UsageWindow w in snapshot.Windows)
-        {
-            if (w.Percent >= threshold)
-            {
-                if (_notifiedKeys.Add(w.Key))
-                    newlyCrossed.Add($"{w.DisplayName} at {w.Percent}%");
-            }
-            else
-            {
-                // Allow a fresh notification next time this window climbs again.
-                _notifiedKeys.Remove(w.Key);
-            }
+        if (snapshot.TrayWindow is not { } w)
+            return;
 
-            // Once a window reaches its limit, remember when it resets so we can
-            // announce availability even if usage stays maxed right up to then.
-            if (w.IsLimited && w.ResetsAt is { } reset && reset > DateTimeOffset.Now)
-                _limitWatches[w.Key] = (reset, w.DisplayName);
+        if (w.Percent >= threshold)
+        {
+            if (_notifiedKeys.Add(w.Key))
+                newlyCrossed.Add($"{w.DisplayName} at {w.Percent}%");
         }
+        else
+        {
+            // Allow a fresh notification next time this window climbs again.
+            _notifiedKeys.Remove(w.Key);
+        }
+
+        // Once the 5-hour window hits its limit, remember when it resets so we can
+        // announce availability even if usage stays maxed right up to then.
+        if (w.IsLimited && w.ResetsAt is { } reset && reset > DateTimeOffset.Now)
+            _limitWatches[w.Key] = (reset, w.DisplayName);
 
         if (newlyCrossed.Count > 0 && _settings.ShowNotifications)
         {
@@ -287,7 +285,7 @@ public sealed class TrayApplicationContext : ApplicationContext
                     // Let the threshold warning re-arm if it climbs again.
                     _notifiedKeys.Remove(key);
 
-                    if (_settings.ShowNotifications)
+                    if (_settings.ShowResetNotifications)
                     {
                         _notifyIcon.ShowBalloonTip(
                             10000,
@@ -311,33 +309,17 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private static string BuildTooltip(UsageSnapshot snapshot)
+    private static string BuildTrayTooltip(UsageSnapshot snapshot)
     {
-        if (snapshot.Windows.Count == 0)
-            return "Claude: connected (no usage data)";
+        if (snapshot.TrayWindow is not { } w)
+            return "Claude: connected (no 5-hour data)";
 
-        var sb = new StringBuilder();
-        foreach (UsageWindow w in snapshot.Windows)
-        {
-            string label = ShortLabel(w.Key, w.DisplayName);
-            string piece = $"{label} {w.Percent}%";
-            if (sb.Length + piece.Length + 3 > 124)
-                break;
-            if (sb.Length > 0)
-                sb.Append("  ·  ");
-            sb.Append(piece);
-        }
-        return sb.ToString();
+        string reset = UsageRow.FormatReset(w.ResetsAt);
+        string text = $"5h {w.Percent}%";
+        if (reset.Length > 0 && text.Length + reset.Length + 5 <= 127)
+            text += $"  ·  {reset}";
+        return text;
     }
-
-    private static string ShortLabel(string key, string fallback) => key switch
-    {
-        "five_hour" => "5h",
-        "seven_day" => "7d",
-        "seven_day_sonnet" => "7d Sonnet",
-        "seven_day_opus" => "7d Opus",
-        _ => fallback,
-    };
 
     private void SetIcon(int? percent)
     {

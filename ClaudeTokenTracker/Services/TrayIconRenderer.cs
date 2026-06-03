@@ -23,7 +23,7 @@ public static class TrayIconRenderer
             DestroyIcon(handle);
     }
 
-    /// <param name="percent">Peak utilization 0-100+, or null when unknown/errored.</param>
+    /// <param name="percent">5-hour session utilization 0-100+, or null when unknown/errored.</param>
     public static (Icon Icon, IntPtr Handle) Render(int? percent)
     {
         const int size = 32;

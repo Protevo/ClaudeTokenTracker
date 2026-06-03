@@ -28,6 +28,9 @@ public sealed class AppSettings
 
     public bool ShowNotifications { get; set; } = true;
 
+    /// <summary>Balloon when a maxed-out usage window resets and tokens are available again.</summary>
+    public bool ShowResetNotifications { get; set; } = true;
+
     /// <summary>
     /// Keep the tray icon permanently visible on the taskbar (Windows 11) instead of
     /// letting it hide in the "⌃" overflow flyout. Re-applied on each launch.
@@ -47,6 +50,7 @@ public sealed class AppSettings
         WarnThresholdPercent = WarnThresholdPercent,
         StartWithWindows = StartWithWindows,
         ShowNotifications = ShowNotifications,
+        ShowResetNotifications = ShowResetNotifications,
         PinToTaskbar = PinToTaskbar,
         Cookie = Cookie,
     };
