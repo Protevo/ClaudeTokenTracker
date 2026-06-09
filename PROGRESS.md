@@ -9,6 +9,36 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 
 ---
 
+## Status: v1.8 — "Start with Windows" now actually launches (StartupApproved fix)
+
+### v1.8 — respect the Task Manager / Settings startup toggle
+- **Bug:** "Start with Windows" could be checked yet the app never launched at sign-in.
+  Root cause is Windows' **StartupApproved** mechanism: when an autorun is disabled via
+  **Task Manager → Startup** or **Settings → Apps → Startup**, Windows leaves the
+  `HKCU\…\Run` value in place but records a "disabled" flag under
+  `…\Explorer\StartupApproved\Run` and silently ignores the Run entry. The old
+  `StartupManager.IsEnabled()` only looked at the Run key, so it reported **enabled**
+  while Windows refused to start the app — and because `ShowSettings` only calls
+  `SetEnabled` when the checkbox differs from `IsEnabled()`, re-checking the box was a
+  **no-op**, leaving the user with no in-app way to fix it.
+- **Reproduced** with the real code path (temporary `--startup-*` diag in `Program.cs`):
+  wrote a disabled flag (`03 00 …`) → `IsEnabled()` still returned `True` (the bug).
+  Confirmed `Environment.ProcessPath` resolves correctly for both the dev apphost and the
+  **single-file** release exe, and that the Run write/format were otherwise fine.
+- **Fix — `Services/StartupManager.cs`:**
+  - `IsEnabled()` now returns the **effective** state: Run value present **and** not
+    disabled in StartupApproved (flag absent, or its first byte even). So the menu /
+    Settings checkbox tells the truth.
+  - `SetEnabled(true)` writes the Run value **and clears** our StartupApproved entry
+    (absent = enabled), so re-enabling from the app overrides a prior Task Manager disable
+    and the entry is honoured at next sign-in.
+  - `SetEnabled(false)` removes the Run value and the StartupApproved entry (clean slate).
+  - All registry access stays per-user (HKCU), no admin rights, no new dependencies.
+- **Verification:** built (0 warnings / 0 errors) and exercised every transition via the
+  real registry: disabled-flag → `IsEnabled=False`; re-enable → flag cleared, Run present,
+  `IsEnabled=True`; disable → both keys removed. Machine left in a clean state; the
+  temporary diagnostic was removed before final build. Version bumped to **1.8.0**.
+
 ## Status: v1.7 — ring gauge replaces clipped pill bar
 
 ### v1.7 — clearer usage visualization in the details window

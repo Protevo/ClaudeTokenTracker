@@ -1,5 +1,50 @@
 # Release notes
 
+## Claude Token Tracker 1.8.0
+
+**June 2026** — "Start with Windows" reliability fix.
+
+### Highlights
+
+- **"Start with Windows" now actually launches the app at sign-in.** If you'd ever
+  turned the app off under **Task Manager → Startup** (or **Settings → Apps → Startup**),
+  Windows kept ignoring it even though the option still looked enabled — and re-ticking
+  the box did nothing. The toggle now reports its real state and re-enabling forces the
+  entry back on.
+
+### Details
+
+- The app now reads and writes Windows' `StartupApproved` flag alongside the `Run` key, so
+  the menu/Settings checkbox reflects the *effective* startup state.
+- Turning "Start with Windows" on clears any leftover "disabled" flag; turning it off
+  removes both registry entries for a clean slate. Still per-user, no admin rights.
+- Verified that the startup path resolves correctly for the single-file portable build.
+
+### Requirements
+
+Unchanged from prior releases:
+
+- Windows 10 (1803+) or Windows 11 (x64)
+- Claude.ai **Pro** or **Max** subscription and a valid session cookie
+- For the portable build: no .NET install — use `release\ClaudeTokenTracker.exe` from `.\publish.ps1`
+
+### Upgrade
+
+1. Quit the running app (right-click tray icon → Exit, or close from Task Manager if needed).
+2. Replace `ClaudeTokenTracker.exe` with the new build.
+3. Launch again — settings and your encrypted cookie in `%APPDATA%\ClaudeTokenTracker` are preserved.
+4. If "Start with Windows" wasn't working before, open the tray menu and toggle it **on** once to repair the entry.
+
+### Build
+
+```powershell
+.\publish.ps1
+```
+
+Output: `release\ClaudeTokenTracker.exe` (self-contained single file, ~67 MB).
+
+---
+
 ## Claude Token Tracker 1.7.0
 
 **June 2026** — clearer usage details and a more reliable header.
