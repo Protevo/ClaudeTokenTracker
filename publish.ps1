@@ -46,15 +46,37 @@ Write-Host "Output       : $outAbs`n"      -ForegroundColor DarkGray
 # Clean prior output so the folder only ever holds the current release.
 if (Test-Path $outAbs) { Remove-Item $outAbs -Recurse -Force }
 
+# Publish flags are repeated here on purpose so a partial/misapplied profile cannot
+# silently emit a framework-dependent exe that needs .NET 8 on the target PC.
 & $dotnet publish $project `
+    -c Release `
+    -r win-x64 `
+    --self-contained true `
     -p:PublishProfile=SingleFile-win-x64 `
+    -p:PublishSingleFile=true `
+    -p:SelfContained=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:EnableCompressionInSingleFile=true `
+    -p:PublishReadyToRun=false `
+    -p:DebugType=embedded `
     -o $outAbs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)." }
 
 $exe = Join-Path $outAbs "ClaudeTokenTracker.exe"
 if (-not (Test-Path $exe)) { throw "Publish reported success but $exe is missing." }
 
-$sizeMB = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+$sizeBytes = (Get-Item $exe).Length
+$sizeMB = [math]::Round($sizeBytes / 1MB, 1)
+# Self-contained single-file bundles the .NET 8 runtime (~60+ MB). A few-hundred-KB exe
+# is the framework-dependent apphost from "dotnet build" — it will NOT run without .NET installed.
+$minPortableBytes = 40MB
+if ($sizeBytes -lt $minPortableBytes) {
+    throw @"
+Publish produced $exe ($sizeMB MB), which is too small to be a self-contained release.
+Expected about 60-70 MB. Do not copy ClaudeTokenTracker.exe from bin\ after 'dotnet build'.
+Always distribute the exe from: $outAbs
+"@
+}
 Write-Host "`nDone. Single-file release ready:" -ForegroundColor Green
 Write-Host ("  {0}  ({1} MB)" -f $exe, $sizeMB)  -ForegroundColor Green
 Write-Host "`nHand that one .exe to anyone on Windows 10/11 x64 - no .NET install needed."

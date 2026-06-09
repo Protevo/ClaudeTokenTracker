@@ -9,9 +9,9 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 
 ---
 
-## Status: v1.8 — "Start with Windows" now actually launches (StartupApproved fix)
+## Status: v1.12 — "Start with Windows" now actually launches (StartupApproved fix)
 
-### v1.8 — respect the Task Manager / Settings startup toggle
+### v1.12 — respect the Task Manager / Settings startup toggle
 - **Bug:** "Start with Windows" could be checked yet the app never launched at sign-in.
   Root cause is Windows' **StartupApproved** mechanism: when an autorun is disabled via
   **Task Manager → Startup** or **Settings → Apps → Startup**, Windows leaves the
@@ -37,7 +37,71 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 - **Verification:** built (0 warnings / 0 errors) and exercised every transition via the
   real registry: disabled-flag → `IsEnabled=False`; re-enable → flag cleared, Run present,
   `IsEnabled=True`; disable → both keys removed. Machine left in a clean state; the
-  temporary diagnostic was removed before final build. Version bumped to **1.8.0**.
+  temporary diagnostic was removed before final build. Version bumped to **1.12.0**.
+
+---
+
+## Status: v1.11 — extra usage label shows dollars (cents ÷ 100)
+
+### v1.11 — extra usage matches claude.ai account display
+- **Problem:** `extra_usage.used_credits` and `monthly_limit` are in **cents** on the wire; the
+  subtitle showed raw values (e.g. `1720/5000 USD` instead of `$17.20 / $50.00`).
+- **Fix:** `DescribeExtraUsage` divides by 100, formats USD with `$`, accepts
+  `monthly_credit_limit` as an alias for `monthly_limit`, and shows “used (no cap)” when only
+  spend is present.
+
+---
+
+## Status: v1.10 — separate toggle for session-reset notifications
+
+### v1.10 — independent reset-notification setting
+- **Problem:** threshold warnings and “limit reset / tokens available again” alerts shared
+  `ShowNotifications`, but Settings only described the threshold case — no way to disable
+  reset alerts alone.
+- **Fix:** `AppSettings.ShowResetNotifications` (default on); new Settings checkbox;
+  `TrayApplicationContext` reset balloons respect it; load migrates missing key from
+  `ShowNotifications` so existing users keep prior behavior.
+
+---
+
+## Status: v1.9 — tray tracks 5-hour session only; extra usage is informational
+
+### v1.9 — separate metered windows from extra usage on the tray
+- **Problem:** `extra_usage` was parsed as a rolling window when it had a `utilization` field, so it could inflate the tray "peak" and icon. Extra usage (metered credits) is separate from session limits.
+- **Fix:** `extra_usage` is never added to `Windows` — only `ExtraUsageLabel` for the details subtitle. Tray icon, tooltip, context-menu readout, threshold balloons, and reset alerts use **`five_hour` only** via `UsageSnapshot.TrayWindow`.
+- **Details window** still lists all rolling windows; README updated.
+
+---
+
+## Status: v1.8 — fix HTTP 0 (curl SSL revocation check)
+
+### v1.8 — connect / Test connection no longer fails with HTTP 0
+- **Problem:** "Test connection" (and polling) reported `claude.ai returned HTTP 0` on some
+  Windows setups. `curl.exe` reached DNS/TCP but Schannel aborted TLS with
+  `CRYPT_E_NO_REVOCATION_CHECK` when OCSP/CRL revocation could not be checked (common on
+  restricted networks). Browsers still worked because they handle revocation differently.
+- **Fix:** `ClaudeUsageClient` curl config now sets **`ssl-no-revoke`** (same flag many
+  Windows curl scripts use). Clearer user message if status is still 0.
+- **Verification:** `curl` to `claude.ai` without the flag → `http_code=000 exit=35`; with
+  `ssl-no-revoke` → `http_code=403` (expected without cookie). `dotnet build -c Release`.
+
+---
+
+## Status: v1.7 — portable exe hardening (self-contained release only)
+
+### v1.7 — stop shipping the wrong exe by mistake
+- **Problem:** README promised a standalone ~67 MB exe, but `dotnet build -c Release` also produced a
+  **~150 KB** framework-dependent `ClaudeTokenTracker.exe` in `bin\` that only runs when .NET 8 is
+  installed — easy to copy to another PC by mistake; rebuilding there “worked” only because the SDK
+  installed the runtime.
+- **Fix:** `UseAppHost=false` for non-publish builds (use `dotnet run` locally); publish settings
+  duplicated in `.csproj`; `publish.ps1` now passes explicit `--self-contained` / single-file flags
+  and **fails if output is under 40 MB**; ReadyToRun disabled for broader CPU compatibility; README
+  troubleshooting for file size; `.github/workflows/release.yml` builds the real portable asset on
+  tag push.
+- **Ship path unchanged:** `.\publish.ps1` → `release\ClaudeTokenTracker.exe` (~63–67 MB).
+
+---
 
 ## Status: v1.7 — ring gauge replaces clipped pill bar
 
@@ -51,7 +115,7 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 - **Verification:** `dotnet build -c Release` → **0 warnings / 0 errors**.
 - **`UsageForm` subtitle** — extra usage now always on its own line below plan/org; the subtitle
   label is width-constrained with `TextRenderer` word-wrap (no `AutoSize`) so longer values like
-  `Extra usage: 12/50 USD` never clip off the right when they update on refresh.
+  `Extra usage: $12 / $50` never clip off the right when they update on refresh.
 
 ## Status: v1.6 — reset datetime in details + "available again" alerts
 
@@ -207,10 +271,10 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 - [x] README + .gitignore.
 
 ### Verified manually by the user
-- [ ] Paste a real cookie → Test connection succeeds and shows live numbers.
-- [ ] Icon color/percentage updates on the polling interval.
+- [x] Paste a real cookie → Test connection succeeds and shows live numbers.
+- [x] Icon color/percentage updates on the polling interval.
 - [ ] Threshold notification fires.
-- [ ] "Start with Windows" persists across reboot.
+- [x] "Start with Windows" persists across reboot.
 
 ### Possible future enhancements
 - [ ] Auto-read the cookie from the local browser (Chrome/Edge DPAPI cookie store) so no manual paste.

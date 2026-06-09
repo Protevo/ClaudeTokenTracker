@@ -1,0 +1,37 @@
+# Builds the portable self-contained exe attached to GitHub Releases.
+# End users should download this artifact (~67 MB), not a "dotnet build" output.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish portable exe
+        shell: pwsh
+        run: ./publish.ps1
+
+      - name: Verify portable size
+        shell: pwsh
+        run: |
+          $exe = Get-Item 'release/ClaudeTokenTracker.exe'
+          if ($exe.Length -lt 40MB) {
+            throw "release exe is only $([math]::Round($exe.Length/1MB,1)) MB; expected ~67 MB self-contained build."
+          }
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeTokenTracker-win-x64
+          path: release/ClaudeTokenTracker.exe

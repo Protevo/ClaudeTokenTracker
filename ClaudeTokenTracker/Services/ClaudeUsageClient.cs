@@ -44,7 +44,6 @@ public sealed class ClaudeUsageClient : IDisposable
             ["seven_day_oauth_apps"] = ("7-day (API apps)", 10),
             ["seven_day_omelette"] = ("7-day (Claude Code)", 11),
             ["seven_day_cowork"] = ("7-day (Cowork)", 12),
-            ["extra_usage"] = ("Extra usage", 100),
         };
 
     private readonly string _curlPath;
@@ -238,12 +237,14 @@ public sealed class ClaudeUsageClient : IDisposable
             if (prop.Value.ValueKind != JsonValueKind.Object)
                 continue;
 
-            if (!TryGetDouble(prop.Value, "utilization", out double utilization))
+            if (prop.Name.Equals("extra_usage", StringComparison.OrdinalIgnoreCase))
             {
-                if (prop.Name.Equals("extra_usage", StringComparison.OrdinalIgnoreCase))
-                    extraLabel = DescribeExtraUsage(prop.Value);
+                extraLabel = DescribeExtraUsage(prop.Value);
                 continue;
             }
+
+            if (!TryGetDouble(prop.Value, "utilization", out double utilization))
+                continue;
 
             (string display, int sort) = KnownWindows.TryGetValue(prop.Name, out var meta)
                 ? meta
@@ -259,9 +260,6 @@ public sealed class ClaudeUsageClient : IDisposable
                 ResetsAt = GetResetTime(prop.Value),
                 SortOrder = sort,
             });
-
-            if (prop.Name.Equals("extra_usage", StringComparison.OrdinalIgnoreCase))
-                extraLabel = DescribeExtraUsage(prop.Value);
         }
 
         windows.Sort((a, b) => a.SortOrder != b.SortOrder
@@ -287,18 +285,39 @@ public sealed class ClaudeUsageClient : IDisposable
         if (!enabled)
             return "Extra usage: off";
 
-        // Newer shape: spent vs monthly credit limit in some currency.
-        if (TryGetDouble(el, "used_credits", out double used) &&
-            TryGetDouble(el, "monthly_limit", out double limit))
+        // Credit-based metered billing. used_credits and monthly_limit ship in cents
+        // (same as /overage_spend_limit); divide by 100 to match claude.ai/settings/usage.
+        if (TryGetDouble(el, "used_credits", out double usedCents))
         {
-            string currency = GetString(el, "currency") is { Length: > 0 } c ? " " + c : string.Empty;
-            return $"Extra usage: {used:0.##}/{limit:0.##}{currency}";
+            string? currency = GetString(el, "currency");
+            double used = usedCents / 100.0;
+
+            if (TryGetMonthlyLimitCents(el, out double limitCents) && limitCents > 0)
+            {
+                double limit = limitCents / 100.0;
+                return $"Extra usage: {FormatMoney(used, currency)} / {FormatMoney(limit, currency)}";
+            }
+
+            return $"Extra usage: {FormatMoney(used, currency)} used (no cap)";
         }
 
         if (TryGetDouble(el, "utilization", out double util))
             return $"Extra usage: {(int)Math.Round(util)}%";
 
         return "Extra usage: on";
+    }
+
+    private static bool TryGetMonthlyLimitCents(JsonElement el, out double cents)
+    {
+        if (TryGetDouble(el, "monthly_limit", out cents))
+            return true;
+        return TryGetDouble(el, "monthly_credit_limit", out cents);
+    }
+
+    private static string FormatMoney(double amount, string? currency)
+    {
+        string code = (currency ?? "USD").Trim().ToUpperInvariant();
+        return code == "USD" ? $"${amount:0.##}" : $"{amount:0.##} {code}";
     }
 
     /// <summary>
@@ -431,6 +450,11 @@ public sealed class ClaudeUsageClient : IDisposable
         var sb = new StringBuilder();
         sb.AppendLine("silent");
         sb.AppendLine("show-error");
+        // Schannel tries OCSP/CRL revocation by default; on some networks (or when
+        // revocation endpoints are blocked) that fails with CRYPT_E_NO_REVOCATION_CHECK
+        // and curl reports HTTP 000 — browsers often still work because they cache
+        // revocation state or use a different TLS stack.
+        sb.AppendLine("ssl-no-revoke");
         sb.AppendLine("location");
         sb.AppendLine("max-time = 25");
         sb.AppendLine("user-agent = " + Q(UserAgent));
@@ -450,6 +474,10 @@ public sealed class ClaudeUsageClient : IDisposable
 
         return status switch
         {
+            0 =>
+                "Could not reach claude.ai (no HTTP response). Check your internet connection, " +
+                "VPN, or firewall. If those are fine, Windows may be blocking SSL certificate " +
+                "revocation checks — update the app or retry after a reboot.",
             401 or 403 =>
                 $"Session rejected (HTTP {status}).{suffix} Your sessionKey is missing, wrong, or " +
                 "expired. In a logged-in browser, copy the full value of the \"sessionKey\" cookie " +

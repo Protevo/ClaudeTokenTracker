@@ -22,6 +22,7 @@ public sealed class SettingsForm : Form
     private readonly NumericUpDown _warn;
     private readonly CheckBox _startup;
     private readonly CheckBox _notify;
+    private readonly CheckBox _notifyReset;
     private readonly CheckBox _pin;
     private readonly Label _status;
     private readonly FlatButton _save;
@@ -45,7 +46,7 @@ public sealed class SettingsForm : Form
         BackColor = Theme.Canvas;
         ForeColor = Theme.Ink;
         Font = Theme.Sans(9f);
-        ClientSize = new Size(480, 628);
+        ClientSize = new Size(480, 656);
 
         int width = ClientSize.Width - PadX * 2;
         int right = PadX + width;
@@ -234,6 +235,17 @@ public sealed class SettingsForm : Form
         };
 
         y += 28;
+        _notifyReset = new CheckBox
+        {
+            Text = "Show a notification when the session limit resets",
+            AutoSize = true,
+            ForeColor = Theme.Ink,
+            BackColor = Color.Transparent,
+            Checked = current.ShowResetNotifications,
+            Location = new Point(labelX, y),
+        };
+
+        y += 28;
         _pin = new CheckBox
         {
             Text = "Always show the icon on the taskbar",
@@ -268,6 +280,7 @@ public sealed class SettingsForm : Form
         Controls.Add(_warn);
         Controls.Add(_startup);
         Controls.Add(_notify);
+        Controls.Add(_notifyReset);
         Controls.Add(_pin);
         Controls.Add(_status);
         Controls.Add(footer);
@@ -318,9 +331,9 @@ public sealed class SettingsForm : Form
                 return;
             }
 
-            int peak = snapshot.Peak?.Percent ?? 0;
+            int fiveHour = snapshot.TrayWindow?.Percent ?? 0;
             string plan = string.IsNullOrWhiteSpace(snapshot.PlanLabel) ? "" : $" · {snapshot.PlanLabel}";
-            SetStatus($"Connected to {chosen.Name}{plan}. Peak usage {peak}% across {snapshot.Windows.Count} windows.",
+            SetStatus($"Connected to {chosen.Name}{plan}. 5-hour session at {fiveHour}% ({snapshot.Windows.Count} windows in details).",
                 error: false);
         }
         catch (Exception ex)
@@ -346,6 +359,7 @@ public sealed class SettingsForm : Form
             WarnThresholdPercent = (int)_warn.Value,
             StartWithWindows = _startup.Checked,
             ShowNotifications = _notify.Checked,
+            ShowResetNotifications = _notifyReset.Checked,
             PinToTaskbar = _pin.Checked,
         };
     }

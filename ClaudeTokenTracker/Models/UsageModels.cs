@@ -52,7 +52,14 @@ public sealed class UsageSnapshot
 
     public bool IsError => Error is not null;
 
-    /// <summary>The highest utilization across all windows (this is what gets you limited).</summary>
+    /// <summary>Raw API key for the rolling window shown on the system tray.</summary>
+    public const string TrayWindowKey = "five_hour";
+
+    /// <summary>The 5-hour session window — sole source for tray icon, tooltip, and alerts.</summary>
+    public UsageWindow? TrayWindow =>
+        Windows.FirstOrDefault(w => w.Key.Equals(TrayWindowKey, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The highest utilization across rolling windows (excludes extra usage).</summary>
     public UsageWindow? Peak =>
         Windows.Count == 0 ? null : Windows.Aggregate((a, b) => b.Utilization > a.Utilization ? b : a);
 

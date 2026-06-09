@@ -1,6 +1,6 @@
 # Release notes
 
-## Claude Token Tracker 1.8.0
+## Claude Token Tracker 1.12.0
 
 **June 2026** — "Start with Windows" reliability fix.
 
@@ -45,6 +45,23 @@ Output: `release\ClaudeTokenTracker.exe` (self-contained single file, ~67 MB).
 
 ---
 
+## Claude Token Tracker 1.11.0
+
+- **Extra usage shown in dollars** — the "Extra usage" subtitle divides the API's cents values by 100 and formats as USD (e.g. `$17.20 / $50.00`) to match your claude.ai account. Accepts `monthly_credit_limit` as an alias for `monthly_limit`, and shows "used (no cap)" when only spend is reported.
+
+## Claude Token Tracker 1.10.0
+
+- **Separate toggle for reset notifications** — "limit reset / tokens available again" alerts now have their own setting (default on), independent of the threshold warnings. Existing users keep prior behavior via a one-time migration from the old combined notifications toggle.
+
+## Claude Token Tracker 1.9.0
+
+- **Tray reflects the 5-hour session only** — metered `extra_usage` credits are no longer mixed into the tray peak/icon; they stay informational in the details subtitle. The tray icon, tooltip, menu readout, and alerts all use the `five_hour` window. The details window still lists every rolling window.
+
+## Claude Token Tracker 1.8.0
+
+- **Fixes HTTP 0 on Test connection / polling** — `curl` now uses `ssl-no-revoke`, so Schannel no longer aborts TLS with `CRYPT_E_NO_REVOCATION_CHECK` on networks that can't reach OCSP/CRL revocation servers. Clearer message if a request still returns HTTP 0.
+- **Portable build hardening** — `dotnet build -c Release` no longer emits a misleading ~150 KB framework-dependent exe; publish settings are mirrored in the `.csproj`, `publish.ps1` fails if the output is under 40 MB, ReadyToRun is disabled for broader CPU compatibility, and a `release.yml` workflow builds the portable asset on tag push.
+
 ## Claude Token Tracker 1.7.0
 
 **June 2026** — clearer usage details and a more reliable header.
@@ -52,7 +69,7 @@ Output: `release\ClaudeTokenTracker.exe` (self-contained single file, ~67 MB).
 ### Highlights
 
 - **Circular progress rings** in the details window replace the old pill bar. Each usage window shows a compact ring with the percentage inside, plus the window name and reset time beside it — easier to read at a glance and no more awkward split end caps on the old bar.
-- **Extra usage always visible** — plan and organization stay on the first line of the header; credit-based overage (`Extra usage: …`) moves to its own line below. Long values (for example `12/50 USD`) wrap inside the window instead of clipping off the right when they update on refresh.
+- **Extra usage always visible** — plan and organization stay on the first line of the header; credit-based overage (`Extra usage: …`) moves to its own line below. Dollar amounts match claude.ai (API values are cents ÷ 100, e.g. `$17.20 / $50.00`). Long values wrap inside the window instead of clipping off the right when they update on refresh.
 
 ### Details
 
@@ -66,7 +83,7 @@ Unchanged from prior releases:
 
 - Windows 10 (1803+) or Windows 11 (x64)
 - Claude.ai **Pro** or **Max** subscription and a valid session cookie
-- For the portable build: no .NET install — use `release\ClaudeTokenTracker.exe` from `.\publish.ps1`
+- For the portable build: no .NET install — use `release\ClaudeTokenTracker.exe` from `.\publish.ps1` (~63–67 MB). Do **not** copy the ~150 KB exe from `bin\` after `dotnet build`.
 
 ### Upgrade
 

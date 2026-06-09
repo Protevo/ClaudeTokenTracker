@@ -34,6 +34,10 @@ public static class SettingsStore
             string json = File.ReadAllText(FilePath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
 
+            // Older settings files only had ShowNotifications for both alert types.
+            if (!JsonContainsProperty(json, nameof(AppSettings.ShowResetNotifications)))
+                settings.ShowResetNotifications = settings.ShowNotifications;
+
             settings.Cookie = Unprotect(settings.CookieProtected);
             settings.PollSeconds = Math.Max(15, settings.PollSeconds);
             settings.WarnThresholdPercent = Math.Clamp(settings.WarnThresholdPercent, 1, 100);
@@ -64,6 +68,19 @@ public static class SettingsStore
 
         byte[] encrypted = DataProtection.Protect(Encoding.UTF8.GetBytes(plaintext), Entropy);
         return Convert.ToBase64String(encrypted);
+    }
+
+    private static bool JsonContainsProperty(string json, string propertyName)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty(propertyName, out _);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? Unprotect(string? protectedBase64)

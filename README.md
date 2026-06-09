@@ -14,7 +14,9 @@ You get a color-coded **percentage on the tray icon**, a quick breakdown in the 
 | **Claude plan** | Active **Pro** or **Max** on claude.ai (Free accounts have nothing to meter) |
 | **Browser session** | A valid claude.ai login — you will copy your session cookie once during setup |
 
-The recommended download is a **single `.exe` file** (~67 MB). It includes everything required to run; you do **not** need to install .NET separately.
+The recommended download is a **single `.exe` file** (~67 MB). It bundles the .NET 8 runtime; you do **not** need to install .NET separately.
+
+**Important:** the portable exe is only the one built with `.\publish.ps1` (or downloaded from [Releases](https://github.com/Protevo/ClaudeTokenTracker/releases)). A ~150 KB `ClaudeTokenTracker.exe` from `dotnet build` is **not** portable — it requires .NET 8 on that PC.
 
 ---
 
@@ -61,7 +63,7 @@ The tray icon should change from a gray **?** to a colored number within about a
 
 ## Reading the tray icon
 
-The icon shows your **peak utilization** across all rolling windows (5-hour, 7-day, per-model limits, and so on). Claude rate-limits you when **any** window hits 100%, so the app displays the highest one.
+The icon shows your **5-hour session** utilization only. Other rolling limits (7-day, per-model caps) and **extra usage** credits appear in the details window, not in the tray total.
 
 | Color | Meaning |
 |-------|---------|
@@ -71,7 +73,7 @@ The icon shows your **peak utilization** across all rolling windows (5-hour, 7-d
 | Red | 95% or higher — close to the limit |
 | Gray **?** | Not connected, expired cookie, or an error |
 
-Hover the icon for a short summary. **Right-click** for a per-window list; **double-click** to open the full details window.
+Hover the icon for the 5-hour percentage and reset countdown. **Right-click** for the same readout in the menu; **double-click** to open the full details window (all windows + extra usage).
 
 ---
 
@@ -114,7 +116,8 @@ Open **Settings…** from the tray menu.
 | **Refresh interval** | 60 seconds | How often to poll (minimum 15 seconds) |
 | **Warn at %** | 80% | Desktop notification when any window crosses this level |
 | **Start with Windows** | Off | Run at sign-in |
-| **Show desktop notifications** | On | Threshold warnings and “limit reset” alerts |
+| **Warn when limit is nearly reached** | On | Desktop notification when usage crosses **Warn at %** |
+| **Notify when session limit resets** | On | “Tokens available again” alert when a maxed window resets |
 | **Always show icon on taskbar** | On | Pin the tray icon so it stays visible on Windows 11 |
 
 Use **Test connection** before **Save** whenever you paste a new cookie.
@@ -123,12 +126,12 @@ Use **Test connection** before **Save** whenever you paste a new cookie.
 
 ## Notifications
 
-With notifications enabled (default):
+With alerts enabled (defaults):
 
-- You get a **warning** when any usage window crosses your **Warn at %** threshold (default 80%).
-- When a window was **maxed out** and its reset time passes, you get a **“tokens available again”** alert even if the next scheduled refresh is still a while away.
+- You get a **warning** when any usage window crosses your **Warn at %** threshold (default 80%) — toggle in Settings.
+- When a window was **maxed out** and its reset time passes, you get a **“tokens available again”** alert even if the next scheduled refresh is still a while away — separate toggle in Settings.
 
-Turn these off in Settings if you only want the tray icon.
+Turn either off in Settings if you only want the tray icon.
 
 ---
 
@@ -154,6 +157,12 @@ Turn these off in Settings if you only want the tray icon.
 ### “Already running” when you start the exe
 
 - The app is already in the tray. Look for the colored number (or **?**) near the clock, or end it from Task Manager and start again.
+
+### Windows asks to install .NET, or the exe only works after rebuilding on that PC
+
+- You likely copied the **wrong exe**. The portable build is **~67 MB**; a **~150 KB** file from `bin\Release\` is a dev build that needs [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) installed.
+- On the build machine, run `.\publish.ps1` and copy **`release\ClaudeTokenTracker.exe`** (or use the GitHub Release asset of the same size).
+- Target PC must be **64-bit Windows 10 (1803+)** or **Windows 11** (not ARM-only tablets unless x64 emulation is available).
 
 ### Cookie help inside the app
 
@@ -187,14 +196,14 @@ Unofficial tool, not affiliated with or endorsed by Anthropic. Use in line with 
 Source code, build steps, and release packaging are documented for contributors:
 
 ```powershell
-# Build and run from source
+# Build and run from source (requires .NET 8 SDK on this machine only)
 cd ClaudeTokenTracker
-dotnet build -c Release
 dotnet run -c Release
 
-# Single-file release exe (repo root)
+# Portable exe for other PCs — no .NET install needed on the target machine
+cd ..
 .\publish.ps1
-# → release\ClaudeTokenTracker.exe
+# → release\ClaudeTokenTracker.exe  (~67 MB; verify size before copying)
 ```
 
 See [PROGRESS.md](PROGRESS.md) for implementation notes and [RELEASE_NOTES.md](RELEASE_NOTES.md) for version history.
