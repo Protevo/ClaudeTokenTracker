@@ -87,6 +87,7 @@ Hover the icon for the 5-hour percentage and reset countdown. **Right-click** fo
 | **Show details…** | Opens the usage window with progress rings and reset times |
 | **Refresh now** | Fetches the latest numbers immediately |
 | **Open claude.ai usage page** | Opens the official usage page in your browser |
+| **Organization: …** | Quick switcher between your orgs/accounts — only shown if your session has more than one |
 | **Settings…** | Cookie, organization, refresh interval, alerts |
 | **Start with Windows** | Launch the app when you sign in (no admin rights needed) |
 | **Always show icon on taskbar** | Keeps the icon visible on Windows 11 instead of hiding it under **⌃** (on by default) |
@@ -99,9 +100,19 @@ Double-click the tray icon (or choose **Show details…**) to see:
 - Your **plan**, **organization**, and **extra usage** credits (if your account has them)
 - One **ring gauge** per usage window, with the percentage inside
 - **When each window resets** (countdown plus clock time, for example `resets in 2h 30m · 6:30 PM`)
+- An **organization dropdown** in the top-right corner (only if you have several — see below)
 - **Refresh** and a link to the claude.ai usage page
 
 Closing the details window only **hides** it; the app keeps running in the tray.
+
+### Two accounts / organizations
+
+If you have **two accounts under the same e-mail** (for example personal + work), they show up as two **organizations** on the same claude.ai session, and the app remembers both. To switch which one is tracked:
+
+- **Right-click the tray icon** → **Organization: …** → pick the other org, or
+- use the **dropdown in the details window**, or the **Organization** list in Settings.
+
+Switching is instant when the other org was fetched before (a fresh refresh still follows), and the icon, tooltip, menu, and alerts all follow the selected org. With several orgs, notifications and the menu readout include the org name, and a "tokens available again" alert for one org still arrives while you track the other.
 
 ---
 
@@ -112,7 +123,7 @@ Open **Settings…** from the tray menu.
 | Setting | Default | Purpose |
 |---------|---------|---------|
 | **Session cookie** | *(empty)* | Your claude.ai login — required |
-| **Organization** | First org found | Which org’s usage to show if you have several |
+| **Organization** | First org found | Which org’s usage to track — all orgs your session can see are listed (also switchable from the tray menu and details window) |
 | **Refresh interval** | 60 seconds | How often to poll (minimum 15 seconds) |
 | **Warn at %** | 80% | Desktop notification when any window crosses this level |
 | **Start with Windows** | Off | Run at sign-in |

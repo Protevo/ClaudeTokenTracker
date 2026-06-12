@@ -1,5 +1,53 @@
 # Release notes
 
+## Claude Token Tracker 1.13.0
+
+**June 2026** — multiple organizations: remember both accounts, switch in two clicks.
+
+### Highlights
+
+- **Two accounts under one e-mail are now first-class.** Both organizations on your
+  claude.ai session are remembered, and you can switch the tracked one from the
+  tray menu (**Organization: …**), a new dropdown in the details window, or Settings —
+  no more re-running "Test connection" just to change org.
+- **Instant switching.** The app caches the last numbers per org, so flipping back and
+  forth shows data immediately while a fresh refresh runs in the background.
+- **Org-aware alerts.** With more than one org, warnings and "tokens available again"
+  alerts say which org they belong to — and a pending reset alert for one org still
+  fires after you switch to the other. The tray tooltip and menu name the org too.
+
+### Details
+
+- The org list is fetched alongside every usage poll (no extra requests) and persisted,
+  so the switchers work right after launch.
+- Notification bookkeeping is keyed per org, so thresholds/resets never leak between orgs.
+- Single-org accounts see no UI change.
+
+### Requirements
+
+Unchanged from prior releases:
+
+- Windows 10 (1803+) or Windows 11 (x64)
+- Claude.ai **Pro** or **Max** subscription and a valid session cookie
+- For the portable build: no .NET install — use `release\ClaudeTokenTracker.exe` from `.\publish.ps1`
+
+### Upgrade
+
+1. Quit the running app (right-click tray icon → Exit).
+2. Replace `ClaudeTokenTracker.exe` with the new build and launch it.
+3. Settings are preserved. The second org appears in the switchers after the first
+   successful refresh (or a "Test connection" in Settings).
+
+### Build
+
+```powershell
+.\publish.ps1
+```
+
+Output: `release\ClaudeTokenTracker.exe` (self-contained single file, ~67 MB).
+
+---
+
 ## Claude Token Tracker 1.12.0
 
 **June 2026** — "Start with Windows" reliability fix.

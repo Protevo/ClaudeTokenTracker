@@ -18,6 +18,13 @@ public sealed class AppSettings
     /// <summary>Friendly org name, cached for display only.</summary>
     public string? OrgName { get; set; }
 
+    /// <summary>
+    /// Every org the session can see (e.g. two accounts under the same e-mail),
+    /// cached so the org switcher works immediately on launch. Refreshed on each
+    /// successful poll and on "Test connection".
+    /// </summary>
+    public List<ClaudeOrg> KnownOrgs { get; set; } = new();
+
     /// <summary>How often to poll claude.ai, in seconds. Minimum enforced at load.</summary>
     public int PollSeconds { get; set; } = 60;
 
@@ -46,6 +53,7 @@ public sealed class AppSettings
         CookieProtected = CookieProtected,
         OrgUuid = OrgUuid,
         OrgName = OrgName,
+        KnownOrgs = new List<ClaudeOrg>(KnownOrgs),
         PollSeconds = PollSeconds,
         WarnThresholdPercent = WarnThresholdPercent,
         StartWithWindows = StartWithWindows,

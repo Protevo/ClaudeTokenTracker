@@ -19,12 +19,17 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _timer;
 
     private readonly ToolStripMenuItem _headerItem;
+    private readonly ToolStripMenuItem _orgItem;
     private readonly ToolStripMenuItem _startupItem;
     private readonly ToolStripMenuItem _pinItem;
 
     private AppSettings _settings;
     private UsageForm? _usageForm;
     private UsageSnapshot? _lastSnapshot;
+
+    // Last good snapshot per org uuid, so switching orgs shows data instantly
+    // (a fresh refresh still follows).
+    private readonly Dictionary<string, UsageSnapshot> _snapshotsByOrg = new();
 
     private Icon? _currentIcon;
     private IntPtr _currentIconHandle = IntPtr.Zero;
@@ -34,10 +39,12 @@ public sealed class TrayApplicationContext : ApplicationContext
     private System.Windows.Forms.Timer? _pinTimer;
     private int _pinAttempts;
 
+    // Keys are org-scoped (see NotifyKey) so alerts from one org never suppress
+    // or fire for the other after a switch.
     private readonly HashSet<string> _notifiedKeys = new();
 
     // Windows we've seen hit their limit, mapped to the reset moment we'll announce.
-    private readonly Dictionary<string, (DateTimeOffset ResetsAt, string DisplayName)> _limitWatches = new();
+    private readonly Dictionary<string, (DateTimeOffset ResetsAt, string DisplayName, string? OrgName)> _limitWatches = new();
     private readonly System.Windows.Forms.Timer _resetTimer;
 
     private bool _refreshing;
@@ -47,6 +54,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _settings = SettingsStore.Load();
 
         _headerItem = new ToolStripMenuItem("Claude Token Tracker") { Enabled = false };
+        _orgItem = new ToolStripMenuItem("Organization") { Visible = false };
         _startupItem = new ToolStripMenuItem("Start with Windows") { CheckOnClick = true };
         _startupItem.Checked = StartupManager.IsEnabled();
         _startupItem.Click += OnToggleStartup;
@@ -59,6 +67,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _menu.Opening += (_, _) =>
         {
             PopulateWindowItems();
+            PopulateOrgMenu();
             _pinItem.Checked = TaskbarPinner.IsPinned();
         };
 
@@ -113,6 +122,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem("Open claude.ai usage page", null,
             (_, _) => UsageForm.OpenUrl("https://claude.ai/settings/usage")));
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_orgItem);
         menu.Items.Add(new ToolStripMenuItem("Settings…", null, (_, _) => ShowSettings()));
         menu.Items.Add(_startupItem);
         menu.Items.Add(_pinItem);
@@ -160,6 +170,65 @@ public sealed class TrayApplicationContext : ApplicationContext
     private static ToolStripMenuItem MakeWindowItem(string text) =>
         new(text) { Enabled = false, Tag = "win" };
 
+    /// <summary>True when the session can see more than one org (e.g. two accounts under one e-mail).</summary>
+    private bool MultiOrg => _settings.KnownOrgs.Count > 1;
+
+    /// <summary>
+    /// Rebuilds the "Organization" submenu from the cached org list just before the
+    /// menu opens. Hidden entirely for single-org sessions.
+    /// </summary>
+    private void PopulateOrgMenu()
+    {
+        _orgItem.DropDownItems.Clear();
+        _orgItem.Visible = MultiOrg;
+        if (!_orgItem.Visible)
+            return;
+
+        _orgItem.Text = string.IsNullOrWhiteSpace(_settings.OrgName)
+            ? "Organization"
+            : "Organization: " + Shorten(_settings.OrgName!, 28);
+
+        foreach (ClaudeOrg org in _settings.KnownOrgs)
+        {
+            var item = new ToolStripMenuItem(org.ToString())
+            {
+                Checked = org.Uuid == _settings.OrgUuid,
+            };
+            item.Click += (_, _) => SwitchOrg(org);
+            _orgItem.DropDownItems.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// Makes <paramref name="org"/> the tracked organization: persists the choice,
+    /// shows its cached snapshot for instant feedback (when we have one), then
+    /// kicks off a fresh refresh.
+    /// </summary>
+    private void SwitchOrg(ClaudeOrg org)
+    {
+        if (org.Uuid == _settings.OrgUuid)
+            return;
+
+        _settings.OrgUuid = org.Uuid;
+        _settings.OrgName = org.Name;
+        SettingsStore.Save(_settings);
+
+        if (_snapshotsByOrg.TryGetValue(org.Uuid, out UsageSnapshot? cached))
+        {
+            _lastSnapshot = cached;
+            ApplySnapshot(cached);
+        }
+        else
+        {
+            _lastSnapshot = null;
+            SetIcon(null);
+            _headerItem.Text = "Switching to " + Shorten(org.Name, 32) + "…";
+            _notifyIcon.Text = Shorten("Claude: loading " + org.Name + "…", 127);
+        }
+
+        _ = RefreshAsync(userInitiated: true);
+    }
+
     private async Task RefreshAsync(bool userInitiated)
     {
         if (_refreshing)
@@ -172,30 +241,80 @@ public sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        bool switchedMidFlight = false;
         _refreshing = true;
         _usageForm?.SetBusy(true);
         try
         {
-            UsageSnapshot snapshot = await _client.GetUsageAsync(_settings.Cookie, _settings.OrgUuid);
-            _lastSnapshot = snapshot;
+            string? requestedOrg = _settings.OrgUuid;
+            UsageSnapshot snapshot = await _client.GetUsageAsync(_settings.Cookie, requestedOrg);
 
-            // Cache an auto-resolved org so we skip the extra lookup next time.
-            if (string.IsNullOrWhiteSpace(_settings.OrgUuid) &&
-                !snapshot.IsError &&
-                !string.IsNullOrWhiteSpace(snapshot.ResolvedOrgUuid))
+            // The user may have switched org while this request was running; the
+            // result is then for the wrong org — keep it cached, but don't show it.
+            switchedMidFlight = _settings.OrgUuid != requestedOrg;
+
+            if (!snapshot.IsError)
             {
-                _settings.OrgUuid = snapshot.ResolvedOrgUuid;
-                _settings.OrgName = snapshot.OrgName;
-                SettingsStore.Save(_settings);
+                if (!string.IsNullOrWhiteSpace(snapshot.ResolvedOrgUuid))
+                    _snapshotsByOrg[snapshot.ResolvedOrgUuid!] = snapshot;
+                SyncOrgSettings(snapshot, allowActiveOrgSync: !switchedMidFlight);
             }
 
-            ApplySnapshot(snapshot);
+            if (!switchedMidFlight)
+            {
+                _lastSnapshot = snapshot;
+                ApplySnapshot(snapshot);
+            }
         }
         finally
         {
             _refreshing = false;
             _usageForm?.SetBusy(false);
         }
+
+        if (switchedMidFlight)
+            await RefreshAsync(userInitiated);
+    }
+
+    /// <summary>
+    /// Keeps the persisted org bookkeeping in line with what claude.ai just told us:
+    /// caches the full org list for the switcher UIs, and (unless the user switched
+    /// mid-request) adopts the org that was actually queried when it differs from the
+    /// saved one (first-run auto-resolve, renames, or a stale uuid that fell back).
+    /// </summary>
+    private void SyncOrgSettings(UsageSnapshot snapshot, bool allowActiveOrgSync)
+    {
+        bool dirty = false;
+
+        if (snapshot.Orgs.Count > 0 && !OrgListsEqual(_settings.KnownOrgs, snapshot.Orgs))
+        {
+            _settings.KnownOrgs = snapshot.Orgs.ToList();
+            dirty = true;
+        }
+
+        if (allowActiveOrgSync &&
+            !string.IsNullOrWhiteSpace(snapshot.ResolvedOrgUuid) &&
+            (_settings.OrgUuid != snapshot.ResolvedOrgUuid || _settings.OrgName != snapshot.OrgName))
+        {
+            _settings.OrgUuid = snapshot.ResolvedOrgUuid;
+            _settings.OrgName = snapshot.OrgName;
+            dirty = true;
+        }
+
+        if (dirty)
+            SettingsStore.Save(_settings);
+    }
+
+    private static bool OrgListsEqual(IReadOnlyList<ClaudeOrg> a, IReadOnlyList<ClaudeOrg> b)
+    {
+        if (a.Count != b.Count)
+            return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i].Uuid != b[i].Uuid || a[i].Name != b[i].Name || a[i].PlanLabel != b[i].PlanLabel)
+                return false;
+        }
+        return true;
     }
 
     private void ApplySnapshot(UsageSnapshot snapshot)
@@ -214,9 +333,14 @@ public sealed class TrayApplicationContext : ApplicationContext
         int trayPercent = tray?.Percent ?? 0;
         SetIcon(trayPercent);
 
+        // With several orgs on one session, say which one the numbers belong to.
+        string orgTag = MultiOrg && !string.IsNullOrWhiteSpace(snapshot.OrgName)
+            ? Shorten(snapshot.OrgName!, 24) + " · "
+            : string.Empty;
+
         _headerItem.Text = tray is null
-            ? "Connected — no 5-hour data"
-            : $"5-hour: {trayPercent}%";
+            ? orgTag + "Connected — no 5-hour data"
+            : $"{orgTag}5-hour: {trayPercent}%";
 
         _notifyIcon.Text = BuildTrayTooltip(snapshot);
         CheckThresholds(snapshot);
@@ -230,21 +354,29 @@ public sealed class TrayApplicationContext : ApplicationContext
         if (snapshot.TrayWindow is not { } w)
             return;
 
+        string key = NotifyKey(snapshot.ResolvedOrgUuid, w.Key);
+
         if (w.Percent >= threshold)
         {
-            if (_notifiedKeys.Add(w.Key))
-                newlyCrossed.Add($"{w.DisplayName} at {w.Percent}%");
+            if (_notifiedKeys.Add(key))
+            {
+                string line = $"{w.DisplayName} at {w.Percent}%";
+                if (MultiOrg && !string.IsNullOrWhiteSpace(snapshot.OrgName))
+                    line = $"{snapshot.OrgName}: {line}";
+                newlyCrossed.Add(line);
+            }
         }
         else
         {
             // Allow a fresh notification next time this window climbs again.
-            _notifiedKeys.Remove(w.Key);
+            _notifiedKeys.Remove(key);
         }
 
         // Once the 5-hour window hits its limit, remember when it resets so we can
-        // announce availability even if usage stays maxed right up to then.
+        // announce availability even if usage stays maxed right up to then — or the
+        // user switches to their other org in the meantime.
         if (w.IsLimited && w.ResetsAt is { } reset && reset > DateTimeOffset.Now)
-            _limitWatches[w.Key] = (reset, w.DisplayName);
+            _limitWatches[key] = (reset, w.DisplayName, snapshot.OrgName);
 
         if (newlyCrossed.Count > 0 && _settings.ShowNotifications)
         {
@@ -280,18 +412,17 @@ public sealed class TrayApplicationContext : ApplicationContext
             {
                 foreach (string key in due)
                 {
-                    (_, string displayName) = _limitWatches[key];
+                    (_, string displayName, string? orgName) = _limitWatches[key];
                     _limitWatches.Remove(key);
                     // Let the threshold warning re-arm if it climbs again.
                     _notifiedKeys.Remove(key);
 
                     if (_settings.ShowResetNotifications)
                     {
-                        _notifyIcon.ShowBalloonTip(
-                            10000,
-                            "Claude limit reset",
-                            $"Your {displayName} limit has reset — tokens are available again.",
-                            ToolTipIcon.Info);
+                        string message = MultiOrg && !string.IsNullOrWhiteSpace(orgName)
+                            ? $"{orgName}: your {displayName} limit has reset — tokens are available again."
+                            : $"Your {displayName} limit has reset — tokens are available again.";
+                        _notifyIcon.ShowBalloonTip(10000, "Claude limit reset", message, ToolTipIcon.Info);
                     }
                 }
             }
@@ -309,16 +440,24 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private static string BuildTrayTooltip(UsageSnapshot snapshot)
+    /// <summary>Scopes notification bookkeeping to an org so switching never crosses alerts.</summary>
+    private static string NotifyKey(string? orgUuid, string windowKey) => $"{orgUuid}|{windowKey}";
+
+    private string BuildTrayTooltip(UsageSnapshot snapshot)
     {
         if (snapshot.TrayWindow is not { } w)
             return "Claude: connected (no 5-hour data)";
 
-        string reset = UsageRow.FormatReset(w.ResetsAt);
         string text = $"5h {w.Percent}%";
+        if (MultiOrg && !string.IsNullOrWhiteSpace(snapshot.OrgName))
+            text = $"{snapshot.OrgName} · {text}";
+
+        string reset = UsageRow.FormatReset(w.ResetsAt);
         if (reset.Length > 0 && text.Length + reset.Length + 5 <= 127)
             text += $"  ·  {reset}";
-        return text;
+
+        // NotifyIcon.Text throws over 127 chars; org names can push us there.
+        return Shorten(text, 127);
     }
 
     private void SetIcon(int? percent)
@@ -340,6 +479,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _usageForm = new UsageForm(_currentIcon);
             _usageForm.RefreshRequested += async (_, _) => await RefreshAsync(true);
+            _usageForm.OrgSwitchRequested += (_, org) => SwitchOrg(org);
             _usageForm.PositionNearTray();
             if (_lastSnapshot is not null)
                 _usageForm.UpdateSnapshot(_lastSnapshot);
@@ -361,6 +501,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             return;
 
         AppSettings updated = form.Result;
+        bool cookieChanged = !string.Equals(updated.Cookie, _settings.Cookie, StringComparison.Ordinal);
 
         try
         {
@@ -379,6 +520,21 @@ public sealed class TrayApplicationContext : ApplicationContext
         ApplyPinSetting(_settings.PinToTaskbar, announce: true);
         _pinItem.Checked = TaskbarPinner.IsPinned();
         _notifiedKeys.Clear();
+
+        if (cookieChanged)
+        {
+            // A different session may see different orgs; drop anything tied to the old one.
+            _snapshotsByOrg.Clear();
+            _limitWatches.Clear();
+        }
+        else if (_settings.OrgUuid is { } uuid &&
+                 _lastSnapshot?.ResolvedOrgUuid != uuid &&
+                 _snapshotsByOrg.TryGetValue(uuid, out UsageSnapshot? cached))
+        {
+            // Org changed via the Settings dropdown — show its cached data right away.
+            _lastSnapshot = cached;
+            ApplySnapshot(cached);
+        }
 
         _timer.Stop();
         _timer.Interval = _settings.PollSeconds * 1000;

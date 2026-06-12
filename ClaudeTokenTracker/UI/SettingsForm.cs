@@ -176,10 +176,25 @@ public sealed class SettingsForm : Form
             Location = new Point(fieldX, y),
             Width = fieldW,
         };
-        if (!string.IsNullOrEmpty(current.OrgName) && !string.IsNullOrEmpty(current.OrgUuid))
-        {
+        // Seed with every org we've already seen so switching doesn't require a new
+        // "Test connection" round-trip; fall back to the single saved org.
+        foreach (ClaudeOrg org in current.KnownOrgs)
+            _org.Items.Add(org);
+        if (_org.Items.Count == 0 && !string.IsNullOrEmpty(current.OrgName) && !string.IsNullOrEmpty(current.OrgUuid))
             _org.Items.Add(new ClaudeOrg { Uuid = current.OrgUuid!, Name = current.OrgName! });
-            _org.SelectedIndex = 0;
+
+        if (_org.Items.Count > 0)
+        {
+            int selected = 0;
+            for (int i = 0; i < _org.Items.Count; i++)
+            {
+                if (((ClaudeOrg)_org.Items[i]!).Uuid == current.OrgUuid)
+                {
+                    selected = i;
+                    break;
+                }
+            }
+            _org.SelectedIndex = selected;
         }
 
         y += 42;
@@ -355,6 +370,9 @@ public sealed class SettingsForm : Form
             Cookie = _cookie.Text.Trim(),
             OrgUuid = chosen?.Uuid ?? _original.OrgUuid,
             OrgName = chosen?.Name ?? _original.OrgName,
+            KnownOrgs = _org.Items.Count > 0
+                ? _org.Items.Cast<ClaudeOrg>().ToList()
+                : new List<ClaudeOrg>(_original.KnownOrgs),
             PollSeconds = (int)_poll.Value,
             WarnThresholdPercent = (int)_warn.Value,
             StartWithWindows = _startup.Checked,

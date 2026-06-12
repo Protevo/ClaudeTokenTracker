@@ -44,6 +44,9 @@ public sealed class UsageSnapshot
     /// <summary>The org UUID actually queried (useful when it was auto-resolved).</summary>
     public string? ResolvedOrgUuid { get; init; }
 
+    /// <summary>All orgs the session can see, captured alongside the usage fetch.</summary>
+    public IReadOnlyList<ClaudeOrg> Orgs { get; init; } = Array.Empty<ClaudeOrg>();
+
     /// <summary>Extra-usage (metered overage) info, when present. Free-form display string.</summary>
     public string? ExtraUsageLabel { get; init; }
 

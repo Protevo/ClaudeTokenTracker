@@ -20,13 +20,21 @@ public sealed class UsageForm : Form
     private readonly Label _status;
     private readonly FlatButton _refresh;
     private readonly LinkLabel _openSite;
+    private readonly ComboBox _orgPicker;
 
     // Guards layout work that touches child controls from firing during base
     // construction (e.g. the ClientSize assignment below raises OnResize before
     // the header/subtitle fields are assigned).
     private bool _initialized;
 
+    // True while UpdateSnapshot is programmatically syncing the org picker, so the
+    // SelectedIndexChanged handler only reacts to actual user picks.
+    private bool _syncingOrgPicker;
+
     public event EventHandler? RefreshRequested;
+
+    /// <summary>Raised when the user picks a different org in the header dropdown.</summary>
+    public event EventHandler<ClaudeOrg>? OrgSwitchRequested;
 
     public UsageForm(Icon? icon)
     {
@@ -70,6 +78,29 @@ public sealed class UsageForm : Form
             BackColor = Color.Transparent,
             Location = new Point(PadX + 1, 48),
         };
+
+        // Quick org switcher, only shown when the session has more than one org.
+        _orgPicker = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Ink,
+            Font = Theme.Sans(9f),
+            Width = 170,
+            Visible = false,
+        };
+        _orgPicker.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_syncingOrgPicker && _orgPicker.SelectedItem is ClaudeOrg org)
+            {
+                // Deferred: the switch handler repopulates this combo, which must not
+                // happen while the control is still processing the selection change.
+                BeginInvoke(() => OrgSwitchRequested?.Invoke(this, org));
+            }
+        };
+
+        _header.Controls.Add(_orgPicker);
         _header.Controls.Add(_subtitle);
         _header.Controls.Add(_title);
 
@@ -149,6 +180,10 @@ public sealed class UsageForm : Form
 
         int avail = Math.Max(80, ClientSize.Width - (PadX + 1) - PadX);
         _subtitle.Width = avail;
+
+        // Pin the org picker to the header's top-right. Positioned here (not via
+        // Anchor) because the header only grows to the form width once docked.
+        _orgPicker.Location = new Point(Math.Max(PadX, ClientSize.Width - PadX - _orgPicker.Width), 20);
 
         const TextFormatFlags wrap =
             TextFormatFlags.WordBreak | TextFormatFlags.Left | TextFormatFlags.NoPrefix;
@@ -241,10 +276,64 @@ public sealed class UsageForm : Form
             });
         }
 
+        UpdateOrgPicker(snapshot);
         _subtitle.Text = BuildSubtitle(snapshot);
         LayoutHeader();
         _status.Text = "Updated " + snapshot.RetrievedAt.ToString("HH:mm:ss");
         _list.ResumeLayout();
+    }
+
+    /// <summary>
+    /// Mirrors the session's org list into the header dropdown and selects the org
+    /// this snapshot belongs to. Hidden while the session only has one org.
+    /// </summary>
+    private void UpdateOrgPicker(UsageSnapshot snapshot)
+    {
+        _syncingOrgPicker = true;
+        try
+        {
+            // Rebuild only on a real change: a poll can land while the user has the
+            // dropdown open, and clearing the items would snap it shut.
+            if (!PickerMatches(snapshot.Orgs))
+            {
+                _orgPicker.Items.Clear();
+                foreach (ClaudeOrg org in snapshot.Orgs)
+                    _orgPicker.Items.Add(org);
+            }
+
+            _orgPicker.Visible = snapshot.Orgs.Count > 1;
+
+            if (snapshot.ResolvedOrgUuid is { } uuid)
+            {
+                for (int i = 0; i < _orgPicker.Items.Count; i++)
+                {
+                    if (((ClaudeOrg)_orgPicker.Items[i]!).Uuid == uuid)
+                    {
+                        if (_orgPicker.SelectedIndex != i)
+                            _orgPicker.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _syncingOrgPicker = false;
+        }
+    }
+
+    private bool PickerMatches(IReadOnlyList<ClaudeOrg> orgs)
+    {
+        if (_orgPicker.Items.Count != orgs.Count)
+            return false;
+
+        for (int i = 0; i < orgs.Count; i++)
+        {
+            var item = (ClaudeOrg)_orgPicker.Items[i]!;
+            if (item.Uuid != orgs[i].Uuid || item.Name != orgs[i].Name || item.PlanLabel != orgs[i].PlanLabel)
+                return false;
+        }
+        return true;
     }
 
     private static string BuildSubtitle(UsageSnapshot s)

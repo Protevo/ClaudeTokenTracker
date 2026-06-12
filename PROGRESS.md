@@ -9,6 +9,50 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 
 ---
 
+## Status: v1.13 — multi-org support: remember every org, switch in two clicks
+
+### v1.13 — track two accounts (orgs) under one e-mail and switch easily
+- **Use case:** two claude.ai accounts under the same e-mail = two organizations visible to
+  the **same session cookie** (`/api/organizations` lists both). Previously only the active
+  org was persisted and switching meant Settings → Test connection → pick → Save.
+- **`AppSettings.KnownOrgs`** (new) — every org the session can see, persisted to
+  settings.json so the switchers work right after launch. Refreshed on each successful poll
+  and by "Test connection"; `Clone()` copies the list. `UsageSnapshot.Orgs` (new) carries
+  the live org list with each fetch — the client already listed orgs every poll, so this
+  adds **zero extra HTTP calls**.
+- **Tray menu switcher** — new "Organization: {name}" submenu (above Settings…) listing all
+  known orgs with the active one checked; hidden for single-org sessions. Clicking an org
+  persists it and refreshes.
+- **Details-window switcher** — `UsageForm` header got a top-right org dropdown (visible only
+  with ≥2 orgs). It raises `OrgSwitchRequested`; the tray context performs the switch. The
+  combo is positioned in `LayoutHeader()` (not via `Anchor` — the header only grows to form
+  width once docked, the same pitfall fixed for the footer in v1.4) and is only rebuilt when
+  the org list actually changes, so an open dropdown isn't snapped shut by a poll landing.
+  Selection events are deferred via `BeginInvoke` because the switch path repopulates the
+  combo itself. Verified with off-screen renders at 420/380 px (temporary harness, removed).
+- **Instant switching** — snapshots are cached per org uuid; switching shows the cached data
+  immediately (truthful `RetrievedAt` in the footer) while a fresh refresh runs. If an org
+  was never fetched, the icon shows gray + "Switching to {org}…" until data lands. A switch
+  while a request is **in flight** is handled: the stale result is cached but not displayed,
+  and a follow-up refresh for the new org fires (`switchedMidFlight` in `RefreshAsync`).
+- **Org-aware alerts** — `_notifiedKeys` / `_limitWatches` keys are now `{orgUuid}|{window}`
+  so thresholds/resets never cross orgs; limit watches survive switching (max out org A,
+  switch to B, still get "A's tokens are available again"). With >1 known org, balloons,
+  the menu header ("Personal · 5-hour: 20%") and the tooltip name the org; single-org users
+  see no change. `BuildTrayTooltip` clamps to NotifyIcon's 127-char cap.
+- **Org sync** — `SyncOrgSettings` replaces the old auto-resolve block: persists the org list
+  when it changes and adopts the actually-queried org when the saved uuid was stale/blank
+  (settings writes only when something changed). Changing the cookie in Settings clears the
+  per-org snapshot cache and limit watches (a different login may see different orgs);
+  picking a different org in Settings applies its cached snapshot immediately.
+- **SettingsForm** — org dropdown is seeded from `KnownOrgs` (no Test connection needed just
+  to switch); saving persists the dropdown's org list.
+- **Verification:** `dotnet build -c Release` → **0 warnings / 0 errors**; UsageForm rendered
+  off-screen at 420/380 px with a fake 2-org snapshot to confirm the header layout. Version
+  bumped to **1.13.0**.
+
+---
+
 ## Status: v1.12 — "Start with Windows" now actually launches (StartupApproved fix)
 
 ### v1.12 — respect the Task Manager / Settings startup toggle

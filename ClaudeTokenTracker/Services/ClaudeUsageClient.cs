@@ -190,6 +190,7 @@ public sealed class ClaudeUsageClient : IDisposable
                 Windows = windows,
                 OrgName = org.Name,
                 ResolvedOrgUuid = org.Uuid,
+                Orgs = orgs,
                 PlanLabel = org.PlanLabel,
                 ExtraUsageLabel = extraLabel,
                 RetrievedAt = DateTimeOffset.Now,
