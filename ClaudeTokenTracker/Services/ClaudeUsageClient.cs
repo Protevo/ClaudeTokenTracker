@@ -175,10 +175,22 @@ public sealed class ClaudeUsageClient : IDisposable
             if (orgs.Count == 0)
                 return UsageSnapshot.FromError("No Claude organizations found for this session.");
 
-            ClaudeOrg org =
-                (string.IsNullOrWhiteSpace(orgUuid) ? null : orgs.FirstOrDefault(o => o.Uuid == orgUuid))
-                ?? orgs.FirstOrDefault(o => o.HasConsumerPlan)
-                ?? orgs[0];
+            ClaudeOrg org;
+            if (string.IsNullOrWhiteSpace(orgUuid))
+            {
+                org = orgs.FirstOrDefault(o => o.HasConsumerPlan) ?? orgs[0];
+            }
+            else
+            {
+                ClaudeOrg? matched = orgs.FirstOrDefault(o => o.Uuid == orgUuid);
+                if (matched is null)
+                {
+                    return UsageSnapshot.FromError(
+                        "That organization is no longer on this session. Open Settings, " +
+                        "click Test connection, then pick the org again.");
+                }
+                org = matched;
+            }
 
             using JsonDocument usageDoc =
                 await GetJsonAsync(cookie, $"/api/organizations/{org.Uuid}/usage", ct).ConfigureAwait(false);

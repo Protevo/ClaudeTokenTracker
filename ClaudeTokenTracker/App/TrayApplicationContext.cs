@@ -19,7 +19,6 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _timer;
 
     private readonly ToolStripMenuItem _headerItem;
-    private readonly ToolStripMenuItem _orgItem;
     private readonly ToolStripMenuItem _startupItem;
     private readonly ToolStripMenuItem _pinItem;
 
@@ -48,13 +47,21 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _resetTimer;
 
     private bool _refreshing;
+    private bool _refreshQueued;
+
+    /// <summary>Org list for the switcher — prefer the live snapshot, fall back to persisted cache.</summary>
+    private IReadOnlyList<ClaudeOrg> AvailableOrgs =>
+        _lastSnapshot?.Orgs.Count > 0 ? _lastSnapshot.Orgs :
+        _settings.KnownOrgs.Count > 0 ? _settings.KnownOrgs :
+        Array.Empty<ClaudeOrg>();
+
+    private bool MultiOrg => AvailableOrgs.Count > 1;
 
     public TrayApplicationContext()
     {
         _settings = SettingsStore.Load();
 
         _headerItem = new ToolStripMenuItem("Claude Token Tracker") { Enabled = false };
-        _orgItem = new ToolStripMenuItem("Organization") { Visible = false };
         _startupItem = new ToolStripMenuItem("Start with Windows") { CheckOnClick = true };
         _startupItem.Checked = StartupManager.IsEnabled();
         _startupItem.Click += OnToggleStartup;
@@ -122,7 +129,6 @@ public sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem("Open claude.ai usage page", null,
             (_, _) => UsageForm.OpenUrl("https://claude.ai/settings/usage")));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_orgItem);
         menu.Items.Add(new ToolStripMenuItem("Settings…", null, (_, _) => ShowSettings()));
         menu.Items.Add(_startupItem);
         menu.Items.Add(_pinItem);
@@ -170,33 +176,64 @@ public sealed class TrayApplicationContext : ApplicationContext
     private static ToolStripMenuItem MakeWindowItem(string text) =>
         new(text) { Enabled = false, Tag = "win" };
 
-    /// <summary>True when the session can see more than one org (e.g. two accounts under one e-mail).</summary>
-    private bool MultiOrg => _settings.KnownOrgs.Count > 1;
-
     /// <summary>
-    /// Rebuilds the "Organization" submenu from the cached org list just before the
-    /// menu opens. Hidden entirely for single-org sessions.
+    /// Inserts flat, top-level org switcher items before Settings. Nested submenu
+    /// clicks are unreliable on NotifyIcon context menus, so each org is its own
+    /// menu row (radio-style check mark on the active one).
     /// </summary>
     private void PopulateOrgMenu()
     {
-        _orgItem.DropDownItems.Clear();
-        _orgItem.Visible = MultiOrg;
-        if (!_orgItem.Visible)
+        for (int i = _menu.Items.Count - 1; i >= 0; i--)
+        {
+            object? tag = _menu.Items[i].Tag;
+            if (tag is ClaudeOrg or "org-sep" or "org-header")
+                _menu.Items.RemoveAt(i);
+        }
+
+        if (!MultiOrg)
             return;
 
-        _orgItem.Text = string.IsNullOrWhiteSpace(_settings.OrgName)
-            ? "Organization"
-            : "Organization: " + Shorten(_settings.OrgName!, 28);
+        int settingsIdx = -1;
+        for (int i = 0; i < _menu.Items.Count; i++)
+        {
+            if (_menu.Items[i] is ToolStripMenuItem { Text: "Settings…" })
+            {
+                settingsIdx = i;
+                break;
+            }
+        }
+        if (settingsIdx < 0)
+            return;
 
-        foreach (ClaudeOrg org in _settings.KnownOrgs)
+        string? activeUuid = _settings.OrgUuid ?? _lastSnapshot?.ResolvedOrgUuid;
+
+        _menu.Items.Insert(settingsIdx, new ToolStripSeparator { Tag = "org-sep" });
+        settingsIdx++;
+
+        _menu.Items.Insert(settingsIdx, new ToolStripMenuItem("Switch organization")
+        {
+            Enabled = false,
+            Tag = "org-header",
+        });
+        settingsIdx++;
+
+        foreach (ClaudeOrg org in AvailableOrgs)
         {
             var item = new ToolStripMenuItem(org.ToString())
             {
-                Checked = org.Uuid == _settings.OrgUuid,
+                Tag = org,
+                Checked = org.Uuid == activeUuid,
+                CheckOnClick = true,
             };
-            item.Click += (_, _) => SwitchOrg(org);
-            _orgItem.DropDownItems.Add(item);
+            item.Click += OnOrgMenuItemClick;
+            _menu.Items.Insert(settingsIdx++, item);
         }
+    }
+
+    private void OnOrgMenuItemClick(object? sender, EventArgs e)
+    {
+        if (sender is ToolStripMenuItem { Tag: ClaudeOrg org })
+            SwitchOrg(org);
     }
 
     /// <summary>
@@ -232,7 +269,10 @@ public sealed class TrayApplicationContext : ApplicationContext
     private async Task RefreshAsync(bool userInitiated)
     {
         if (_refreshing)
+        {
+            _refreshQueued = true;
             return;
+        }
 
         if (string.IsNullOrWhiteSpace(_settings.Cookie))
         {
@@ -274,13 +314,17 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         if (switchedMidFlight)
             await RefreshAsync(userInitiated);
+        else if (_refreshQueued)
+        {
+            _refreshQueued = false;
+            await RefreshAsync(userInitiated);
+        }
     }
 
     /// <summary>
     /// Keeps the persisted org bookkeeping in line with what claude.ai just told us:
-    /// caches the full org list for the switcher UIs, and (unless the user switched
-    /// mid-request) adopts the org that was actually queried when it differs from the
-    /// saved one (first-run auto-resolve, renames, or a stale uuid that fell back).
+    /// caches the full org list for the switcher UIs, and auto-resolves OrgUuid only
+    /// when the user hasn't picked one yet (never overwrites an explicit switch).
     /// </summary>
     private void SyncOrgSettings(UsageSnapshot snapshot, bool allowActiveOrgSync)
     {
@@ -292,11 +336,18 @@ public sealed class TrayApplicationContext : ApplicationContext
             dirty = true;
         }
 
-        if (allowActiveOrgSync &&
-            !string.IsNullOrWhiteSpace(snapshot.ResolvedOrgUuid) &&
-            (_settings.OrgUuid != snapshot.ResolvedOrgUuid || _settings.OrgName != snapshot.OrgName))
+        if (allowActiveOrgSync && string.IsNullOrWhiteSpace(_settings.OrgUuid) &&
+            !string.IsNullOrWhiteSpace(snapshot.ResolvedOrgUuid))
         {
             _settings.OrgUuid = snapshot.ResolvedOrgUuid;
+            _settings.OrgName = snapshot.OrgName;
+            dirty = true;
+        }
+        else if (allowActiveOrgSync &&
+                 !string.IsNullOrWhiteSpace(_settings.OrgUuid) &&
+                 _settings.OrgUuid == snapshot.ResolvedOrgUuid &&
+                 _settings.OrgName != snapshot.OrgName)
+        {
             _settings.OrgName = snapshot.OrgName;
             dirty = true;
         }

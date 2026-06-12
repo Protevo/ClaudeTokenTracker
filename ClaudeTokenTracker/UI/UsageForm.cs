@@ -92,12 +92,14 @@ public sealed class UsageForm : Form
         };
         _orgPicker.SelectedIndexChanged += (_, _) =>
         {
-            if (!_syncingOrgPicker && _orgPicker.SelectedItem is ClaudeOrg org)
-            {
-                // Deferred: the switch handler repopulates this combo, which must not
-                // happen while the control is still processing the selection change.
-                BeginInvoke(() => OrgSwitchRequested?.Invoke(this, org));
-            }
+            if (_syncingOrgPicker || _orgPicker.SelectedItem is not ClaudeOrg org)
+                return;
+
+            void FireSwitch() => OrgSwitchRequested?.Invoke(this, org);
+            if (IsHandleCreated)
+                BeginInvoke(FireSwitch);
+            else
+                FireSwitch();
         };
 
         _header.Controls.Add(_orgPicker);

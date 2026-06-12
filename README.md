@@ -87,7 +87,7 @@ Hover the icon for the 5-hour percentage and reset countdown. **Right-click** fo
 | **Show details…** | Opens the usage window with progress rings and reset times |
 | **Refresh now** | Fetches the latest numbers immediately |
 | **Open claude.ai usage page** | Opens the official usage page in your browser |
-| **Organization: …** | Quick switcher between your orgs/accounts — only shown if your session has more than one |
+| *(org rows)* | **Switch organization** — one row per org (check mark on the active one); only shown when your session has more than one |
 | **Settings…** | Cookie, organization, refresh interval, alerts |
 | **Start with Windows** | Launch the app when you sign in (no admin rights needed) |
 | **Always show icon on taskbar** | Keeps the icon visible on Windows 11 instead of hiding it under **⌃** (on by default) |
@@ -109,7 +109,7 @@ Closing the details window only **hides** it; the app keeps running in the tray.
 
 If you have **two accounts under the same e-mail** (for example personal + work), they show up as two **organizations** on the same claude.ai session, and the app remembers both. To switch which one is tracked:
 
-- **Right-click the tray icon** → **Organization: …** → pick the other org, or
+- **Right-click the tray icon** → **Switch organization** → pick the other org, or
 - use the **dropdown in the details window**, or the **Organization** list in Settings.
 
 Switching is instant when the other org was fetched before (a fresh refresh still follows), and the icon, tooltip, menu, and alerts all follow the selected org. With several orgs, notifications and the menu readout include the org name, and a "tokens available again" alert for one org still arrives while you track the other.

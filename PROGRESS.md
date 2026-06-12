@@ -50,6 +50,12 @@ Stack: **C# / .NET 8 WinForms** (`net8.0-windows`), no external NuGet packages.
 - **Verification:** `dotnet build -c Release` → **0 warnings / 0 errors**; UsageForm rendered
   off-screen at 420/380 px with a fake 2-org snapshot to confirm the header layout. Version
   bumped to **1.13.0**.
+- **Bugfix (org switcher):** nested "Organization" submenu clicks often did nothing on
+  NotifyIcon context menus — replaced with flat top-level rows under "Switch organization"
+  (radio-style check on the active org). Also stopped `SyncOrgSettings` from overwriting a
+  user-picked org when the API silently fell back to another uuid, made explicit org
+  requests error instead of fallback, queued refresh when a switch landed during an
+  in-flight poll, and sourced the switcher list from the live snapshot when available.
 
 ---
 
